@@ -14,13 +14,11 @@ npm run start:dev      # http://localhost:<PORT>/api/v1
 
 ## Environment Variables
 
-| Variable | Required | Description |
-| --- | --- | --- |
-| `MONGODB_URI` | Yes | MongoDB connection string (TypeORM `mongodb` connector). |
-| `PORT` | No (defaults to `5000`) | Port the HTTP server listens on. |
-| `CLOUDINARY_CLOUD_NAME` | Yes | Cloudinary account cloud name — used for passport photo uploads. |
-| `CLOUDINARY_API_KEY` | Yes | Cloudinary API key. |
-| `CLOUDINARY_API_SECRET` | Yes | Cloudinary API secret. |
+MongoDB connection string (TypeORM `mongodb` connector). |
+| `PORT` | Port the HTTP server listens on `5000`. |
+| `CLOUDINARY_CLOUD_NAME`| Cloudinary account cloud name — used for passport photo uploads. |
+| `CLOUDINARY_API_KEY`| Cloudinary API key. |
+| `CLOUDINARY_API_SECRET`| Cloudinary API secret. |
 
 ## API Documentation
 
