@@ -28,12 +28,24 @@ NestJS 11 REST API ("Growth X" backend), MongoDB via TypeORM's `mongodb` connect
 route prefix is `api/v1`, CORS is enabled globally ([src/main.ts](src/main.ts)). Default port is `5000`.
 Standard Nest layout per domain: `*.module.ts` / `*.controller.ts` / `*.service.ts` / `dto/` / `entities/`.
 
-`AppModule` ([src/app.module.ts](src/app.module.ts)) imports `ApplicationsModule` and `AuthModule`. An
-applicant's account _is_ their application record: the one-time `gsCode` emailed after submission is exchanged via
-`POST /applications/create-password` for a bcrypt `passwordHash`, then `POST /auth/login` (`src/auth/`) verifies
-email + password and returns a JWT signed with `JWT_SECRET`. No guard or middleware verifies the token yet — ask
-before adding protected routes or roles. The frontend's admin-login and banner RTK endpoints
-(`/admin/auth/login`, banners) still have no backend counterpart.
+`AppModule` ([src/app.module.ts](src/app.module.ts)) imports `ApplicationsModule`, `AuthModule` and
+`DiscussionsModule`. An applicant's account _is_ their application record: the one-time `gsCode` emailed after
+submission is exchanged via `POST /applications/create-password` for a bcrypt `passwordHash`, then `POST /auth/login`
+(`src/auth/`) verifies email + password and returns a JWT signed with `JWT_SECRET`.
+
+Protected routes opt in per controller/route with `@UseGuards(JwtAuthGuard)` (`src/auth/jwt-auth.guard.ts`, which
+verifies the bearer token and sets `request.user = { id, email }`) and read the caller with `@CurrentUser()`.
+`id` is the applicant's application `_id`. Nothing is guarded globally and there are no roles — ask before adding
+them. The frontend's admin-login and banner RTK endpoints (`/admin/auth/login`, banners) still have no backend
+counterpart.
+
+### Discussions module
+
+`src/discussions/` backs the class page's comment thread: `GET`/`POST /discussions/:classId/comments` and
+`POST /discussions/comments/:id/like`, all behind `JwtAuthGuard`. Comments live in their own `discussion_comments`
+collection with the author's name/photo copied in at write time, replies are one level deep (`parentId`), and likes
+are a `likedBy` array of author ids. There is no websocket; the frontend polls. Mongo operators (`$in`, `null`
+matching) don't type-check in TypeORM where clauses, so the service funnels them through the `mongoWhere()` cast.
 
 ### Applications module
 

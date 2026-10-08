@@ -3,7 +3,7 @@
 NestJS 11 REST API for the Growth X admissions flow. MongoDB via TypeORM's `mongodb` connector (not Mongoose),
 Cloudinary for passport photos, nodemailer for applicant emails, bcrypt for password hashing, JWT for login tokens.
 An applicant's account is their application record: they get a one-time GS code by email, set a password with it, then
-log in with email + password.
+log in with email + password. The returned JWT unlocks the class discussion endpoints.
 
 ## Getting Started
 
@@ -38,17 +38,20 @@ Generate a JWT secret with `openssl rand -hex 32`.
 Base URL: `http://localhost:5000/api/v1` (global prefix set in `src/main.ts`; port from `PORT`). CORS is enabled for all origins.
 
 Request bodies are validated by a global `ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true })`
-— a field not declared in a DTO causes `400 Bad Request` instead of being silently dropped. Login issues a token, but no
-route checks it yet.
+— a field not declared in a DTO causes `400 Bad Request` instead of being silently dropped. Routes marked **JWT** below
+need an `Authorization: Bearer <accessToken>` header (from `POST /auth/login`); the rest are public.
 
 ### Endpoints
 
-| Method | Path                            | Description                                                     |
-| ------ | ------------------------------- | --------------------------------------------------------------- |
-| `GET`  | `/`                             | Scaffold health check — returns the plain string `Hello World!` |
-| `POST` | `/applications`                 | Submit an onboarding application (`multipart/form-data`)        |
-| `POST` | `/applications/create-password` | Set an account password using the emailed GS code (JSON)        |
-| `POST` | `/auth/login`                   | Log in with email + password, returns a JWT (JSON)              |
+| Method | Path                             | Description                                                     |
+| ------ | -------------------------------- | --------------------------------------------------------------- |
+| `GET`  | `/`                              | Scaffold health check — returns the plain string `Hello World!` |
+| `POST` | `/applications`                  | Submit an onboarding application (`multipart/form-data`)        |
+| `POST` | `/applications/create-password`  | Set an account password using the emailed GS code (JSON)        |
+| `POST` | `/auth/login`                    | Log in with email + password, returns a JWT (JSON)              |
+| `GET`  | `/discussions/:classId/comments` | **JWT** — list a class's discussion comments with their replies |
+| `POST` | `/discussions/:classId/comments` | **JWT** — post a comment or a reply                             |
+| `POST` | `/discussions/comments/:id/like` | **JWT** — like / unlike a comment (toggle)                      |
 
 There is no endpoint yet to read applications back, change their status, or reset a password. Review currently happens
 by querying MongoDB directly (Atlas or `mongosh`).
@@ -195,11 +198,11 @@ used once: after a password is set, the same code is rejected. The endpoint does
 Public. JSON body. Backs the frontend `/login` page. Only applications that have set a password (see
 `create-password` above) can log in. The email is matched case-insensitively.
 
-| Field        | Type    | Required | Notes                                                       |
-| ------------ | ------- | -------- | ----------------------------------------------------------- |
-| `email`      | string  | Yes      | The email used on the application                           |
-| `password`   | string  | Yes      |                                                             |
-| `rememberMe` | boolean | No       | Token lasts 30 days when `true`, otherwise 1 day            |
+| Field        | Type    | Required | Notes                                            |
+| ------------ | ------- | -------- | ------------------------------------------------ |
+| `email`      | string  | Yes      | The email used on the application                |
+| `password`   | string  | Yes      |                                                  |
+| `rememberMe` | boolean | No       | Token lasts 30 days when `true`, otherwise 1 day |
 
 ```json
 { "email": "jane@doe.com", "password": "Good#Pass1", "rememberMe": true }
@@ -224,11 +227,102 @@ Public. JSON body. Backs the frontend `/login` page. Only applications that have
 ```
 
 The JWT payload is `{ sub: <application id>, email }`, signed with `JWT_SECRET`. `profilePicture` is `null` when no
-passport photo was uploaded. No route verifies the token yet.
+passport photo was uploaded. Protected routes verify it with `JwtAuthGuard` (`src/auth/jwt-auth.guard.ts`) and read the
+user with the `@CurrentUser()` decorator; a missing, malformed, forged or expired token returns `401`.
 
 **Errors:**
 
-| Status | When                                                                                                |
-| ------ | --------------------------------------------------------------------------------------------------- |
-| `400`  | A field fails validation, or an unknown field is sent                                               |
+| Status | When                                                                                                    |
+| ------ | ------------------------------------------------------------------------------------------------------- |
+| `400`  | A field fails validation, or an unknown field is sent                                                   |
 | `401`  | Wrong password, unknown email, or no password set yet (all return the same "Invalid email or password") |
+
+---
+
+## Discussions
+
+Backs the frontend class page (`growth-x/app/(dashboard)/class`). Every class has its own thread, keyed by a `classId`
+string such as `week-1-pricing-your-product` (letters, digits and hyphens, max 100 chars). Comments are stored in the
+`discussion_comments` collection (`src/discussions/entities/discussion-comment.entity.ts`). All three routes need a JWT
+(see Auth) and return `401` without one. There is no websocket: the frontend polls the list every 15 seconds.
+
+A comment is either top-level or a reply. Replies are one level deep: `parentId` must be a top-level comment of the same
+class.
+
+### GET /discussions/:classId/comments
+
+| Query   | Type    | Required | Notes                                             |
+| ------- | ------- | -------- | ------------------------------------------------- |
+| `limit` | integer | No       | Top-level comments to return, 1-50 (default `10`) |
+
+Top-level comments come back newest first; each one carries all its replies, oldest first. "Show more" in the UI simply
+requests a larger `limit`; `total` is the number of top-level comments in the thread.
+
+**Response `200`:**
+
+```json
+{
+  "status": "Success",
+  "statusCode": 200,
+  "data": {
+    "total": 7,
+    "comments": [
+      {
+        "id": "...",
+        "author": {
+          "id": "...",
+          "name": "Jane Doe",
+          "profilePicture": "https://res.cloudinary.com/.../....jpg"
+        },
+        "content": "Great session!",
+        "likes": 2,
+        "likedByMe": false,
+        "createdAt": "2026-10-08T12:00:00.000Z",
+        "replies": [
+          {
+            "id": "...",
+            "author": {
+              "id": "...",
+              "name": "Sarah A.B",
+              "profilePicture": null
+            },
+            "content": "Thanks!",
+            "likes": 0,
+            "likedByMe": false,
+            "createdAt": "2026-10-08T12:05:00.000Z",
+            "replies": []
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+`likedByMe` is relative to the caller. The author's name and photo are copied from their application when the comment is
+posted.
+
+### POST /discussions/:classId/comments
+
+JSON body.
+
+| Field      | Type   | Required | Notes                                                        |
+| ---------- | ------ | -------- | ------------------------------------------------------------ |
+| `content`  | string | Yes      | Trimmed; 1-1000 chars                                        |
+| `parentId` | string | No       | Id of a top-level comment in the same class, to post a reply |
+
+**Response `201`:** `{ "status": "Success", "statusCode": 201, "data": <comment, same shape as above> }`
+
+### POST /discussions/comments/:id/like
+
+No body. Toggles the caller's like on the comment.
+
+**Response `200`:** `{ "status": "Success", "statusCode": 200, "data": { "likes": 3, "likedByMe": true } }`
+
+**Errors (all three routes):**
+
+| Status | When                                                                                                                             |
+| ------ | -------------------------------------------------------------------------------------------------------------------------------- |
+| `400`  | Invalid `classId`/`limit`/`content`/`parentId`, an unknown field is sent, or `parentId` is not a top-level comment of this class |
+| `401`  | Missing, malformed, forged or expired token, or the account no longer exists                                                     |
+| `404`  | The comment to like or reply to doesn't exist                                                                                    |
