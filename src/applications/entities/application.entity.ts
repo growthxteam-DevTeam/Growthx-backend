@@ -1,6 +1,6 @@
 import { Entity, ObjectIdColumn, Column, CreateDateColumn } from 'typeorm';
 import { ObjectId } from 'mongodb';
-import { Transform } from 'class-transformer';
+import { Exclude, Transform } from 'class-transformer';
 import { ApplicationStatus } from 'src/utility/common/application-status.enum';
 import {
   AccessibilitySupportGroup,
@@ -34,6 +34,17 @@ export class ApplicationEntity {
 
   @Column(() => SubmitGroup)
   submit!: SubmitGroup;
+
+  // Emailed to the applicant as proof of ownership of their address, so it
+  // must never be echoed back in the API response.
+  @Exclude()
+  @Column()
+  gsCode!: string;
+
+  // Set once by POST /applications/create-password; its presence marks the GS code as used.
+  @Exclude()
+  @Column({ nullable: true })
+  passwordHash?: string;
 
   @Column({
     type: 'enum',

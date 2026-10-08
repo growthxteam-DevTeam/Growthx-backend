@@ -45,13 +45,24 @@ export class BusinessBasicsGroup {
 
   @Column({
     type: 'enum',
-    enum: ['less-than-6-months', '6-months-to-1-year', '1-3-years', '3-5-years', 'more-than-5-years'],
+    enum: [
+      'less-than-6-months',
+      '6-months-to-1-year',
+      '1-3-years',
+      '3-5-years',
+      'more-than-5-years',
+    ],
   })
   operatingDuration!: string;
 
   @Column({
     type: 'enum',
-    enum: ['no-revenue-yet', 'early-revenue', 'growing-revenue', 'significant-revenue'],
+    enum: [
+      'no-revenue-yet',
+      'early-revenue',
+      'growing-revenue',
+      'significant-revenue',
+    ],
   })
   averageRevenue!: string;
 
@@ -70,6 +81,9 @@ export class WhoYouAreGroup {
 export class AccessibilitySupportGroup {
   @Column({ type: 'enum', enum: ['yes', 'no'] })
   hasAccessibilityNeeds!: 'yes' | 'no';
+
+  @Column({ nullable: true })
+  accessibilityNeed?: string;
 }
 
 export class SubmitGroup {

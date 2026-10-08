@@ -7,7 +7,18 @@ import {
   IsOptional,
   IsString,
   MinLength,
+  ValidateIf,
 } from 'class-validator';
+
+export const ACCESSIBILITY_NEEDS = [
+  'vision',
+  'hearing',
+  'mobility',
+  'cognitive',
+  'speech',
+  'other',
+  'undisclosed',
+];
 
 export class CreateApplicationDto {
   // Application Portal
@@ -61,15 +72,32 @@ export class CreateApplicationDto {
   businessDescription!: string;
 
   @IsNotEmpty({ message: "Select how long you've been operating" })
-  @IsIn(['less-than-6-months', '6-months-to-1-year', '1-3-years', '3-5-years', 'more-than-5-years'], {
-    message: "Select how long you've been operating",
-  })
+  @IsIn(
+    [
+      'less-than-6-months',
+      '6-months-to-1-year',
+      '1-3-years',
+      '3-5-years',
+      'more-than-5-years',
+    ],
+    {
+      message: "Select how long you've been operating",
+    },
+  )
   operatingDuration!: string;
 
   @IsNotEmpty({ message: 'Select your average revenue' })
-  @IsIn(['no-revenue-yet', 'early-revenue', 'growing-revenue', 'significant-revenue'], {
-    message: 'Select your average revenue',
-  })
+  @IsIn(
+    [
+      'no-revenue-yet',
+      'early-revenue',
+      'growing-revenue',
+      'significant-revenue',
+    ],
+    {
+      message: 'Select your average revenue',
+    },
+  )
   averageRevenue!: string;
 
   @IsNotEmpty({ message: 'Select an option' })
@@ -84,11 +112,18 @@ export class CreateApplicationDto {
 
   @IsNotEmpty()
   @IsString()
-  @MinLength(10, { message: 'Tell us more about why now and what outcome you want' })
+  @MinLength(10, {
+    message: 'Tell us more about why now and what outcome you want',
+  })
   cohortMotivation!: string;
 
   // Accessibility & Support
   @IsNotEmpty({ message: 'Please select an option' })
   @IsIn(['yes', 'no'], { message: 'Please select an option' })
   hasAccessibilityNeeds!: 'yes' | 'no';
+
+  @ValidateIf((o: CreateApplicationDto) => o.hasAccessibilityNeeds === 'yes')
+  @IsNotEmpty({ message: 'Please select an option' })
+  @IsIn(ACCESSIBILITY_NEEDS, { message: 'Please select an option' })
+  accessibilityNeed?: string;
 }
