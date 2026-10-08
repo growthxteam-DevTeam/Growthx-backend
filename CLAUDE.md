@@ -29,7 +29,7 @@ route prefix is `api/v1`, CORS is enabled globally ([src/main.ts](src/main.ts)).
 Standard Nest layout per domain: `*.module.ts` / `*.controller.ts` / `*.service.ts` / `dto/` / `entities/`.
 
 `AppModule` ([src/app.module.ts](src/app.module.ts)) imports `ApplicationsModule` and `AuthModule`. An
-applicant's account *is* their application record: the one-time `gsCode` emailed after submission is exchanged via
+applicant's account _is_ their application record: the one-time `gsCode` emailed after submission is exchanged via
 `POST /applications/create-password` for a bcrypt `passwordHash`, then `POST /auth/login` (`src/auth/`) verifies
 email + password and returns a JWT signed with `JWT_SECRET`. No guard or middleware verifies the token yet — ask
 before adding protected routes or roles. The frontend's admin-login and banner RTK endpoints
