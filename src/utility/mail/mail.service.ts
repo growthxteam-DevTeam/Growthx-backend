@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createTransport, type Transporter } from 'nodemailer';
 
@@ -18,6 +18,7 @@ const escapeHtml = (value: string) =>
 
 @Injectable()
 export class MailService {
+  private readonly logger = new Logger(MailService.name);
   private readonly transporter: Transporter;
 
   constructor(private readonly config: ConfigService) {
@@ -68,14 +69,61 @@ export class MailService {
       <p>The Growth X Team</p>
     `;
 
-    await this.transporter.sendMail({
-      from:
-        this.config.get<string>('MAIL_FROM') ??
-        this.config.get<string>('SMTP_USER'),
-      to,
-      subject: 'We have received your Growth X application',
-      text,
-      html,
+    const from =
+      this.config.get<string>('MAIL_FROM') ??
+      this.config.get<string>('SMTP_USER');
+    const subject = 'We have received your Growth X application';
+
+    const brevoApiKey = this.config.get<string>('BREVO_API_KEY');
+    const provider = brevoApiKey ? 'Brevo' : 'SMTP';
+
+    try {
+      if (brevoApiKey) {
+        await this.sendViaBrevo(brevoApiKey, { from, to, subject, text, html });
+      } else {
+        await this.transporter.sendMail({ from, to, subject, text, html });
+      }
+      this.logger.log(`Email sent to ${to} via ${provider}`);
+    } catch (error) {
+      this.logger.error(
+        `Failed to send email to ${to} via ${provider}: ${error instanceof Error ? error.message : String(error)}`,
+        error instanceof Error ? error.stack : undefined,
+      );
+      throw error;
+    }
+  }
+
+  // Render's free tier blocks outbound SMTP ports, so prod must use HTTPS.
+  private async sendViaBrevo(
+    apiKey: string,
+    mail: {
+      from?: string;
+      to: string;
+      subject: string;
+      text: string;
+      html: string;
+    },
+  ) {
+    const response = await fetch('https://api.brevo.com/v3/smtp/email', {
+      method: 'POST',
+      headers: {
+        'api-key': apiKey,
+        'content-type': 'application/json',
+        accept: 'application/json',
+      },
+      body: JSON.stringify({
+        sender: { email: mail.from, name: 'Growth X' },
+        to: [{ email: mail.to }],
+        subject: mail.subject,
+        textContent: mail.text,
+        htmlContent: mail.html,
+      }),
     });
+
+    if (!response.ok) {
+      throw new Error(
+        `Brevo request failed (${response.status}): ${await response.text()}`,
+      );
+    }
   }
 }
