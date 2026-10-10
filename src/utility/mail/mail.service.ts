@@ -74,12 +74,18 @@ export class MailService {
       this.config.get<string>('SMTP_USER');
     const subject = 'We have received your Growth X application';
 
-    const brevoApiKey = this.config.get<string>('BREVO_API_KEY');
-    const provider = brevoApiKey ? 'Brevo' : 'SMTP';
+    const resendApiKey = this.config.get<string>('RESEND_API_KEY');
+    const provider = resendApiKey ? 'Resend' : 'SMTP';
 
     try {
-      if (brevoApiKey) {
-        await this.sendViaBrevo(brevoApiKey, { from, to, subject, text, html });
+      if (resendApiKey) {
+        await this.sendViaResend(resendApiKey, {
+          from,
+          to,
+          subject,
+          text,
+          html,
+        });
       } else {
         await this.transporter.sendMail({ from, to, subject, text, html });
       }
@@ -94,7 +100,7 @@ export class MailService {
   }
 
   // Render's free tier blocks outbound SMTP ports, so prod must use HTTPS.
-  private async sendViaBrevo(
+  private async sendViaResend(
     apiKey: string,
     mail: {
       from?: string;
@@ -104,25 +110,24 @@ export class MailService {
       html: string;
     },
   ) {
-    const response = await fetch('https://api.brevo.com/v3/smtp/email', {
+    const response = await fetch('https://api.resend.com/emails', {
       method: 'POST',
       headers: {
-        'api-key': apiKey,
+        Authorization: `Bearer ${apiKey}`,
         'content-type': 'application/json',
-        accept: 'application/json',
       },
       body: JSON.stringify({
-        sender: { email: mail.from, name: 'Growth X' },
-        to: [{ email: mail.to }],
+        from: mail.from,
+        to: [mail.to],
         subject: mail.subject,
-        textContent: mail.text,
-        htmlContent: mail.html,
+        text: mail.text,
+        html: mail.html,
       }),
     });
 
     if (!response.ok) {
       throw new Error(
-        `Brevo request failed (${response.status}): ${await response.text()}`,
+        `Resend request failed (${response.status}): ${await response.text()}`,
       );
     }
   }
