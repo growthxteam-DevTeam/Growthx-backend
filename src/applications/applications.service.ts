@@ -75,6 +75,11 @@ export class ApplicationsService {
       accessibilitySupport: {
         hasAccessibilityNeeds: dto.hasAccessibilityNeeds,
         accessibilityNeed: dto.accessibilityNeed,
+        // Only meaningful alongside a "yes"; drop it if a client sends notes with "no".
+        accessibilityNotes:
+          dto.hasAccessibilityNeeds === 'yes'
+            ? dto.accessibilityNotes
+            : undefined,
       },
       submit: {
         passportPhotoUrl,

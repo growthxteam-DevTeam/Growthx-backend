@@ -55,7 +55,7 @@ the emailed GS code. `gsCode` and `passwordHash` are `@Exclude()`d on the entity
 `ClassSerializerInterceptor` on the controller so they never leak.
 
 - [applications.controller.ts](src/applications/applications.controller.ts) uses
-  `FileInterceptor('passportPhoto', passportPhotoMulterOptions)` — memory storage, JPEG/PNG only, 2 MB max
+  `FileInterceptor('passportPhoto', passportPhotoMulterOptions)` — memory storage, JPEG/PNG only, 10 MB max
   ([config/passport-photo.multer-options.ts](src/applications/config/passport-photo.multer-options.ts)).
   Keep these limits in sync with the frontend's onboarding constants.
 - [create-application.dto.ts](src/applications/dto/create-application.dto.ts) is **flat**; the service groups

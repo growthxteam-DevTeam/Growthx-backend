@@ -6,6 +6,7 @@ import {
   IsNotEmpty,
   IsOptional,
   IsString,
+  MaxLength,
   MinLength,
   ValidateIf,
 } from 'class-validator';
@@ -126,4 +127,9 @@ export class CreateApplicationDto {
   @IsNotEmpty({ message: 'Please select an option' })
   @IsIn(ACCESSIBILITY_NEEDS, { message: 'Please select an option' })
   accessibilityNeed?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(1000, { message: 'Please keep this under 1000 characters' })
+  accessibilityNotes?: string;
 }

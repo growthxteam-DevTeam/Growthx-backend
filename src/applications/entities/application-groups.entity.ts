@@ -84,6 +84,9 @@ export class AccessibilitySupportGroup {
 
   @Column({ nullable: true })
   accessibilityNeed?: string;
+
+  @Column({ nullable: true })
+  accessibilityNotes?: string;
 }
 
 export class SubmitGroup {

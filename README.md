@@ -68,27 +68,28 @@ Public. `multipart/form-data` (not JSON) so the optional passport photo travels 
 flat; the grouping in the response is only how the record is stored
 (see `src/applications/entities/application-groups.entity.ts`).
 
-| Field                   | Type                                                                                                | Required                                   | From wizard step        | Notes                   |
-| ----------------------- | --------------------------------------------------------------------------------------------------- | ------------------------------------------ | ----------------------- | ----------------------- |
-| `fullName`              | string                                                                                              | Yes                                        | Application Portal      | min 2 chars             |
-| `email`                 | string                                                                                              | Yes                                        | Application Portal      | valid email             |
-| `program`               | string                                                                                              | Yes                                        | Application Portal      |                         |
-| `cohort`                | string                                                                                              | No                                         | Application Portal      |                         |
-| `title`                 | string                                                                                              | No                                         | Personal Information    |                         |
-| `surname`               | string                                                                                              | Yes                                        | Personal Information    |                         |
-| `firstName`             | string                                                                                              | Yes                                        | Personal Information    |                         |
-| `businessName`          | string                                                                                              | Yes                                        | Personal Information    |                         |
-| `dateOfBirth`           | date                                                                                                | Yes                                        | Personal Information    | ISO date string         |
-| `gender`                | string                                                                                              | Yes                                        | Personal Information    |                         |
-| `businessDescription`   | string                                                                                              | Yes                                        | Business Basics         | min 10 chars            |
-| `operatingDuration`     | `"less-than-6-months" \| "6-months-to-1-year" \| "1-3-years" \| "3-5-years" \| "more-than-5-years"` | Yes                                        | Business Basics         |                         |
-| `averageRevenue`        | `"no-revenue-yet" \| "early-revenue" \| "growing-revenue" \| "significant-revenue"`                 | Yes                                        | Business Basics         |                         |
-| `fullTimeCommitment`    | `"full-time" \| "not-yet"`                                                                          | Yes                                        | Business Basics         |                         |
-| `challengeAndSkillGap`  | string                                                                                              | Yes                                        | Who You Are             | min 10 chars            |
-| `cohortMotivation`      | string                                                                                              | Yes                                        | Who You Are             | min 10 chars            |
-| `hasAccessibilityNeeds` | `"yes" \| "no"`                                                                                     | Yes                                        | Accessibility & Support |                         |
-| `accessibilityNeed`     | `"vision" \| "hearing" \| "mobility" \| "cognitive" \| "speech" \| "other" \| "undisclosed"`        | Only if `hasAccessibilityNeeds` is `"yes"` | Accessibility & Support |                         |
-| `passportPhoto`         | file                                                                                                | No                                         | Submit                  | JPEG/PNG only, max 2 MB |
+| Field                   | Type                                                                                                | Required                                   | From wizard step        | Notes                                                               |
+| ----------------------- | --------------------------------------------------------------------------------------------------- | ------------------------------------------ | ----------------------- | ------------------------------------------------------------------- |
+| `fullName`              | string                                                                                              | Yes                                        | Application Portal      | min 2 chars                                                         |
+| `email`                 | string                                                                                              | Yes                                        | Application Portal      | valid email                                                         |
+| `program`               | string                                                                                              | Yes                                        | Application Portal      |                                                                     |
+| `cohort`                | string                                                                                              | No                                         | Application Portal      |                                                                     |
+| `title`                 | string                                                                                              | No                                         | Personal Information    |                                                                     |
+| `surname`               | string                                                                                              | Yes                                        | Personal Information    |                                                                     |
+| `firstName`             | string                                                                                              | Yes                                        | Personal Information    |                                                                     |
+| `businessName`          | string                                                                                              | Yes                                        | Personal Information    |                                                                     |
+| `dateOfBirth`           | date                                                                                                | Yes                                        | Personal Information    | ISO date string                                                     |
+| `gender`                | string                                                                                              | Yes                                        | Personal Information    |                                                                     |
+| `businessDescription`   | string                                                                                              | Yes                                        | Business Basics         | min 10 chars                                                        |
+| `operatingDuration`     | `"less-than-6-months" \| "6-months-to-1-year" \| "1-3-years" \| "3-5-years" \| "more-than-5-years"` | Yes                                        | Business Basics         |                                                                     |
+| `averageRevenue`        | `"no-revenue-yet" \| "early-revenue" \| "growing-revenue" \| "significant-revenue"`                 | Yes                                        | Business Basics         |                                                                     |
+| `fullTimeCommitment`    | `"full-time" \| "not-yet"`                                                                          | Yes                                        | Business Basics         |                                                                     |
+| `challengeAndSkillGap`  | string                                                                                              | Yes                                        | Who You Are             | min 10 chars                                                        |
+| `cohortMotivation`      | string                                                                                              | Yes                                        | Who You Are             | min 10 chars                                                        |
+| `hasAccessibilityNeeds` | `"yes" \| "no"`                                                                                     | Yes                                        | Accessibility & Support |                                                                     |
+| `accessibilityNeed`     | `"vision" \| "hearing" \| "mobility" \| "cognitive" \| "speech" \| "other" \| "undisclosed"`        | Only if `hasAccessibilityNeeds` is `"yes"` | Accessibility & Support |                                                                     |
+| `accessibilityNotes`    | string                                                                                              | No                                         | Accessibility & Support | Max 1000 chars; only stored when `hasAccessibilityNeeds` is `"yes"` |
+| `passportPhoto`         | file                                                                                                | No                                         | Submit                  | JPEG/PNG only, max 10 MB                                            |
 
 **Passport photo:** streamed straight to Cloudinary (folder `growth-x/passport-photos`); nothing is written to local
 disk. The record stores the returned `secure_url` as `submit.passportPhotoUrl`.
@@ -109,7 +110,7 @@ the background: a mail failure is logged and does not fail the request.
     "applicationPortal": {
       "fullName": "Jane Doe",
       "email": "jane@doe.com",
-      "program": "software-engineering",
+      "program": "zero-to-launch",
       "cohort": "cohort-1"
     },
     "personalInfo": {
@@ -132,7 +133,8 @@ the background: a mail failure is logged and does not fail the request.
     },
     "accessibilitySupport": {
       "hasAccessibilityNeeds": "yes",
-      "accessibilityNeed": "hearing"
+      "accessibilityNeed": "hearing",
+      "accessibilityNotes": "I use a screen reader, so PDFs work better for me"
     },
     "submit": {
       "passportPhotoUrl": "https://res.cloudinary.com/.../growth-x/passport-photos/....jpg"
@@ -143,7 +145,8 @@ the background: a mail failure is logged and does not fail the request.
 }
 ```
 
-`accessibilitySupport.accessibilityNeed` is only present when `hasAccessibilityNeeds` is `"yes"`.
+`accessibilitySupport.accessibilityNeed` and `accessibilityNotes` are only present when `hasAccessibilityNeeds` is
+`"yes"` (and the notes were filled in).
 `status` is one of `pending` (default), `reviewed`, `accepted`, `rejected`.
 
 **Errors:**
@@ -151,7 +154,7 @@ the background: a mail failure is logged and does not fail the request.
 | Status | When                                                    |
 | ------ | ------------------------------------------------------- |
 | `400`  | Any field fails validation, or an unknown field is sent |
-| `413`  | `passportPhoto` is over 2 MB                            |
+| `413`  | `passportPhoto` is over 10 MB                           |
 | `415`  | `passportPhoto` is not JPEG/PNG                         |
 
 ### POST /applications/create-password
