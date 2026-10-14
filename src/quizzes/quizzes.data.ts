@@ -11,6 +11,8 @@ export interface QuizQuestionDefinition {
   text: string;
   type: QuizQuestionType;
   points: number;
+  /** Shown after submitting, prefixed with "Correct." or "Incorrect." — so it must read right either way. */
+  explanation: string;
   options: QuizOptionDefinition[];
 }
 
@@ -29,11 +31,13 @@ const question = (
   type: QuizQuestionType,
   options: string[],
   correct: string[],
+  explanation: string,
 ): QuizQuestionDefinition => ({
   id,
   text,
   type,
   points: 1,
+  explanation,
   options: options.map((optionText, index) => ({
     id: String.fromCharCode(97 + index),
     text: optionText,
@@ -60,6 +64,7 @@ export const QUIZZES: QuizDefinition[] = [
           'Whether the customer is generally price-sensitive',
         ],
         ['Whether the price reflects the value delivered'],
+        'Start with value.',
       ),
       question(
         'q2',
@@ -76,6 +81,7 @@ export const QUIZZES: QuizDefinition[] = [
           'Value-based pricing',
           'Competitor-matched pricing',
         ],
+        'Guesswork pricing is not a valid model.',
       ),
       question(
         'q3',
@@ -88,6 +94,7 @@ export const QUIZZES: QuizDefinition[] = [
           'It has no real downside',
         ],
         ['Customers may doubt its quality'],
+        'Low prices can erode perceived quality.',
       ),
       question(
         'q4',
@@ -100,6 +107,7 @@ export const QUIZZES: QuizDefinition[] = [
           'A free trial with limited features',
         ],
         ['A premium tier with extra support'],
+        'Premium tiers can anchor higher perceived value.',
       ),
       question(
         'q5',
@@ -116,6 +124,7 @@ export const QUIZZES: QuizDefinition[] = [
           'Customer acquisition cost',
           'Lifetime value',
         ],
+        'Marketing spend is one input, not the only metric.',
       ),
       question(
         'q6',
@@ -128,6 +137,7 @@ export const QUIZZES: QuizDefinition[] = [
           'The business loses no revenue',
         ],
         ['Customers may doubt its quality'],
+        'Low prices don’t guarantee more revenue and can make customers doubt quality.',
       ),
       question(
         'q7',
@@ -144,6 +154,7 @@ export const QUIZZES: QuizDefinition[] = [
           'It is higher than the customer expected',
           'It is higher than the budget',
         ],
+        'Lower-than-budget is not a common objection.',
       ),
       question(
         'q8',
@@ -156,6 +167,7 @@ export const QUIZZES: QuizDefinition[] = [
           'Offer a discount without a reason',
         ],
         ['Ask what value they want in return'],
+        'Trade a discount for something of value instead of giving it away.',
       ),
       question(
         'q9',
@@ -172,6 +184,7 @@ export const QUIZZES: QuizDefinition[] = [
           'Demand is higher than your supply',
           'The product delivers more value than before',
         ],
+        'A competitor’s bad week is not a reason to change your price.',
       ),
       question(
         'q10',
@@ -184,6 +197,7 @@ export const QUIZZES: QuizDefinition[] = [
           'Copy the closest competitor',
         ],
         ['Run a small controlled test and compare results'],
+        'Small controlled tests show the effect before you commit.',
       ),
     ],
   },

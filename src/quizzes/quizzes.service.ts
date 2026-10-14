@@ -73,6 +73,7 @@ export class QuizzesService {
       return {
         questionId: question.id,
         correct: isCorrect,
+        explanation: question.explanation,
         points: isCorrect ? question.points : 0,
       };
     });
@@ -104,9 +105,10 @@ export class QuizzesService {
         totalPoints,
         passingScore: quiz.passingScore,
         passed,
-        results: results.map(({ questionId, correct }) => ({
+        results: results.map(({ questionId, correct, explanation }) => ({
           questionId,
           correct,
+          explanation,
         })),
       },
     };

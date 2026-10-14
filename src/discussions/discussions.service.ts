@@ -6,15 +6,26 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { ObjectId } from 'mongodb';
-import { FindOptionsWhere, Repository } from 'typeorm';
+import { FindOptionsOrder, FindOptionsWhere, Repository } from 'typeorm';
 
 import { ApplicationEntity } from 'src/applications/entities/application.entity';
 import type { AuthenticatedUser } from 'src/auth/authenticated-user.type';
 
+import { CommentSort } from './dto/get-comments-query.dto';
 import { CreateCommentDto } from './dto/create-comment.dto';
 import { DiscussionCommentEntity } from './entities/discussion-comment.entity';
 
 const DEFAULT_PAGE_SIZE = 10;
+
+// Pinned comments always come first, whichever sort is chosen.
+const SORT_ORDERS: Record<
+  CommentSort,
+  FindOptionsOrder<DiscussionCommentEntity>
+> = {
+  newest: { pinned: 'DESC', createdAt: 'DESC' },
+  oldest: { pinned: 'DESC', createdAt: 'ASC' },
+  top: { pinned: 'DESC', likeCount: 'DESC', createdAt: 'DESC' },
+};
 
 export interface CommentView {
   id: string;
@@ -22,6 +33,9 @@ export interface CommentView {
   content: string;
   likes: number;
   likedByMe: boolean;
+  dislikedByMe: boolean;
+  pinned: boolean;
+  staffPost: boolean;
   createdAt: Date;
   replies: CommentView[];
 }
@@ -43,16 +57,19 @@ export class DiscussionsService {
     classId: string,
     user: AuthenticatedUser,
     limit = DEFAULT_PAGE_SIZE,
+    sort: CommentSort = 'newest',
   ) {
     const topLevelWhere = mongoWhere({ classId, parentId: null });
 
     const [topLevel, total] = await Promise.all([
       this.commentsRepository.find({
         where: topLevelWhere,
-        order: { createdAt: 'DESC' },
+        order: SORT_ORDERS[sort],
         take: limit,
       }),
-      this.commentsRepository.count({ where: topLevelWhere }),
+      // countBy, not count({ where }): the Mongo driver treats count's argument as a raw filter,
+      // so a find-options object silently matches nothing and the total comes back 0.
+      this.commentsRepository.countBy(topLevelWhere),
     ]);
 
     const parentIds = topLevel.map((comment) => String(comment._id));
@@ -116,6 +133,10 @@ export class DiscussionsService {
         content: dto.content,
         parentId: dto.parentId,
         likedBy: [],
+        dislikedBy: [],
+        likeCount: 0,
+        pinned: false,
+        staffPost: false,
       }),
     );
 
@@ -126,12 +147,29 @@ export class DiscussionsService {
     };
   }
 
-  async toggleLike(commentId: string, user: AuthenticatedUser) {
+  // Likes and dislikes are mutually exclusive: choosing one clears the other.
+  async toggleReaction(
+    commentId: string,
+    user: AuthenticatedUser,
+    reaction: 'like' | 'dislike',
+  ) {
     const comment = await this.findComment(commentId);
+    const liked = comment.likedBy ?? [];
+    const disliked = comment.dislikedBy ?? [];
+    const without = (ids: string[]) => ids.filter((id) => id !== user.id);
 
-    comment.likedBy = comment.likedBy.includes(user.id)
-      ? comment.likedBy.filter((id) => id !== user.id)
-      : [...comment.likedBy, user.id];
+    if (reaction === 'like') {
+      const alreadyLiked = liked.includes(user.id);
+      comment.likedBy = alreadyLiked ? without(liked) : [...liked, user.id];
+      comment.dislikedBy = alreadyLiked ? disliked : without(disliked);
+    } else {
+      const alreadyDisliked = disliked.includes(user.id);
+      comment.dislikedBy = alreadyDisliked
+        ? without(disliked)
+        : [...disliked, user.id];
+      comment.likedBy = alreadyDisliked ? liked : without(liked);
+    }
+    comment.likeCount = comment.likedBy.length;
     await this.commentsRepository.save(comment);
 
     return {
@@ -140,6 +178,7 @@ export class DiscussionsService {
       data: {
         likes: comment.likedBy.length,
         likedByMe: comment.likedBy.includes(user.id),
+        dislikedByMe: (comment.dislikedBy ?? []).includes(user.id),
       },
     };
   }
@@ -161,6 +200,8 @@ export class DiscussionsService {
     userId: string,
     replies: DiscussionCommentEntity[],
   ): CommentView {
+    const likedBy = comment.likedBy ?? [];
+
     return {
       id: String(comment._id),
       author: {
@@ -169,8 +210,11 @@ export class DiscussionsService {
         profilePicture: comment.authorPicture ?? null,
       },
       content: comment.content,
-      likes: comment.likedBy.length,
-      likedByMe: comment.likedBy.includes(userId),
+      likes: likedBy.length,
+      likedByMe: likedBy.includes(userId),
+      dislikedByMe: (comment.dislikedBy ?? []).includes(userId),
+      pinned: Boolean(comment.pinned),
+      staffPost: Boolean(comment.staffPost),
       createdAt: comment.createdAt,
       replies: replies.map((reply) => this.toView(reply, userId, [])),
     };

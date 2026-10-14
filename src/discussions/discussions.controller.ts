@@ -29,10 +29,10 @@ export class DiscussionsController {
   @Get(':classId/comments')
   list(
     @Param() { classId }: ClassParamDto,
-    @Query() { limit }: GetCommentsQueryDto,
+    @Query() { limit, sort }: GetCommentsQueryDto,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.discussionsService.list(classId, user, limit);
+    return this.discussionsService.list(classId, user, limit, sort);
   }
 
   @Post(':classId/comments')
@@ -47,6 +47,15 @@ export class DiscussionsController {
   @Post('comments/:id/like')
   @HttpCode(200)
   toggleLike(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
-    return this.discussionsService.toggleLike(id, user);
+    return this.discussionsService.toggleReaction(id, user, 'like');
+  }
+
+  @Post('comments/:id/dislike')
+  @HttpCode(200)
+  toggleDislike(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.discussionsService.toggleReaction(id, user, 'dislike');
   }
 }
