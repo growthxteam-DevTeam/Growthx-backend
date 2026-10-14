@@ -3,7 +3,7 @@
 NestJS 11 REST API for the Growth X admissions flow. MongoDB via TypeORM's `mongodb` connector (not Mongoose),
 Cloudinary for passport photos, nodemailer for applicant emails, bcrypt for password hashing, JWT for login tokens.
 An applicant's account is their application record: they get a one-time GS code by email, set a password with it, then
-log in with email + password. The returned JWT unlocks the class discussion endpoints.
+log in with email + password. The returned JWT unlocks the class discussion and quiz endpoints.
 
 ## Getting Started
 
@@ -43,15 +43,17 @@ need an `Authorization: Bearer <accessToken>` header (from `POST /auth/login`); 
 
 ### Endpoints
 
-| Method | Path                             | Description                                                     |
-| ------ | -------------------------------- | --------------------------------------------------------------- |
-| `GET`  | `/`                              | Scaffold health check — returns the plain string `Hello World!` |
-| `POST` | `/applications`                  | Submit an onboarding application (`multipart/form-data`)        |
-| `POST` | `/applications/create-password`  | Set an account password using the emailed GS code (JSON)        |
-| `POST` | `/auth/login`                    | Log in with email + password, returns a JWT (JSON)              |
-| `GET`  | `/discussions/:classId/comments` | **JWT** — list a class's discussion comments with their replies |
-| `POST` | `/discussions/:classId/comments` | **JWT** — post a comment or a reply                             |
-| `POST` | `/discussions/comments/:id/like` | **JWT** — like / unlike a comment (toggle)                      |
+| Method | Path                             | Description                                                                |
+| ------ | -------------------------------- | -------------------------------------------------------------------------- |
+| `GET`  | `/`                              | Scaffold health check — returns the plain string `Hello World!`            |
+| `POST` | `/applications`                  | Submit an onboarding application (`multipart/form-data`)                   |
+| `POST` | `/applications/create-password`  | Set an account password using the emailed GS code (JSON)                   |
+| `POST` | `/auth/login`                    | Log in with email + password, returns a JWT (JSON)                         |
+| `GET`  | `/discussions/:classId/comments` | **JWT** — list a class's discussion comments with their replies            |
+| `POST` | `/discussions/:classId/comments` | **JWT** — post a comment or a reply                                        |
+| `POST` | `/discussions/comments/:id/like` | **JWT** — like / unlike a comment (toggle)                                 |
+| `GET`  | `/quizzes/:quizId`               | **JWT** — a quiz's questions (no answer key) and the caller's last attempt |
+| `POST` | `/quizzes/:quizId/submissions`   | **JWT** — submit answers; graded and the score is saved                    |
 
 There is no endpoint yet to read applications back, change their status, or reset a password. Review currently happens
 by querying MongoDB directly (Atlas or `mongosh`).
@@ -329,3 +331,103 @@ No body. Toggles the caller's like on the comment.
 | `400`  | Invalid `classId`/`limit`/`content`/`parentId`, an unknown field is sent, or `parentId` is not a top-level comment of this class |
 | `401`  | Missing, malformed, forged or expired token, or the account no longer exists                                                     |
 | `404`  | The comment to like or reply to doesn't exist                                                                                    |
+
+---
+
+## Quizzes
+
+Backs the frontend quiz page (`growth-x/app/(dashboard)/class/quiz`). Quizzes are defined in code
+(`src/quizzes/quizzes.data.ts`); there is no admin tool yet. All routes need a JWT. Each submission is saved in the
+`quiz_attempts` collection, and learners can retake a quiz as often as they like.
+
+The current quiz id is `week-2-pricing-your-product` (10 single- and multi-select questions, 1 point each, pass mark 7).
+
+### GET /quizzes/:quizId
+
+Returns the quiz without its answer key, plus the caller's most recent attempt (or `null`).
+
+```json
+{
+  "status": "Success",
+  "statusCode": 200,
+  "data": {
+    "id": "week-2-pricing-your-product",
+    "title": "Week 2 Quiz: Pricing Your Product",
+    "subtitle": "Practice Assignment",
+    "passingScore": 7,
+    "totalPoints": 10,
+    "questions": [
+      {
+        "id": "q1",
+        "text": "What should you check first if a customer says your price is too high?",
+        "type": "single",
+        "points": 1,
+        "options": [
+          { "id": "a", "text": "..." },
+          { "id": "b", "text": "..." }
+        ]
+      }
+    ],
+    "lastAttempt": {
+      "score": 8,
+      "totalPoints": 10,
+      "passed": true,
+      "submittedAt": "2026-10-14T12:00:00.000Z"
+    }
+  }
+}
+```
+
+`type` is `"single"` or `"multiple"`.
+
+### POST /quizzes/:quizId/submissions
+
+JSON body. Option ids are the `id`s from the quiz response.
+
+| Field                  | Type     | Required | Notes                                                         |
+| ---------------------- | -------- | -------- | ------------------------------------------------------------- |
+| `answers`              | array    | Yes      | One entry per answered question                               |
+| `answers[].questionId` | string   | Yes      | Must be a question of this quiz, at most once                 |
+| `answers[].optionIds`  | string[] | Yes      | Chosen option ids; exactly one allowed for `single` questions |
+
+```json
+{
+  "answers": [
+    { "questionId": "q1", "optionIds": ["b"] },
+    { "questionId": "q2", "optionIds": ["a", "b", "d"] }
+  ]
+}
+```
+
+Grading: a question earns its points only if the chosen options exactly match the correct ones (so a multi-select
+answer with a missing or an extra option scores zero). Questions left out score zero. `passed` is
+`score >= passingScore`.
+
+**Response `201`:**
+
+```json
+{
+  "status": "Success",
+  "statusCode": 201,
+  "data": {
+    "score": 9,
+    "totalPoints": 10,
+    "passingScore": 7,
+    "passed": true,
+    "results": [
+      { "questionId": "q1", "correct": true },
+      { "questionId": "q2", "correct": false }
+    ]
+  }
+}
+```
+
+The response says which questions were right or wrong but never reveals the correct options.
+
+**Errors (both routes):**
+
+| Status | When                                                                                                               |
+| ------ | ------------------------------------------------------------------------------------------------------------------ |
+| `400`  | Invalid `quizId`, unknown question or option, a question answered twice, or several options on a `single` question |
+| `401`  | Missing, malformed, forged or expired token                                                                        |
+| `404`  | No quiz with that id                                                                                               |

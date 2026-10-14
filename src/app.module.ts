@@ -6,6 +6,7 @@ import { AppService } from './app.service';
 import { ApplicationsModule } from './applications/applications.module';
 import { AuthModule } from './auth/auth.module';
 import { DiscussionsModule } from './discussions/discussions.module';
+import { QuizzesModule } from './quizzes/quizzes.module';
 
 @Module({
   imports: [
@@ -24,6 +25,7 @@ import { DiscussionsModule } from './discussions/discussions.module';
     ApplicationsModule,
     AuthModule,
     DiscussionsModule,
+    QuizzesModule,
   ],
   controllers: [AppController],
   providers: [AppService],

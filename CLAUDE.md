@@ -47,6 +47,14 @@ collection with the author's name/photo copied in at write time, replies are one
 are a `likedBy` array of author ids. There is no websocket; the frontend polls. Mongo operators (`$in`, `null`
 matching) don't type-check in TypeORM where clauses, so the service funnels them through the `mongoWhere()` cast.
 
+### Quizzes module
+
+`src/quizzes/` serves quizzes defined in code (`quizzes.data.ts`, answer key included) and grades submissions.
+`GET /quizzes/:quizId` strips the `correct` flags before responding — never send them to the client. A question scores
+its points only when the chosen options exactly match the correct set (so multi-select is all-or-nothing); unanswered
+questions score zero. Every submission is saved as a `quiz_attempts` document (retakes allowed), and the latest one
+comes back as `lastAttempt`. Adding a quiz means adding an entry to `QUIZZES` and pointing the frontend's `QUIZ_ID` at it.
+
 ### Applications module
 
 Two routes (see [README.md](README.md) for payloads and response shapes): `POST /applications` accepts the frontend
@@ -76,6 +84,10 @@ accepted field with `class-validator` decorators or the request is rejected. Bec
 
 `synchronize: true` on the TypeORM connection and entities are auto-discovered via
 `__dirname + '/**/*.entity{.ts,.js}'` — name new entity files `*.entity.ts`. There are no migrations.
+
+Don't model arrays of sub-objects with `@Column(() => SomeClass)`: TypeORM's Mongo driver saves them as one object and
+then throws `document[...].map is not a function` when loading (this broke `GET /quizzes/:quizId`). Use a plain
+`@Column()` typed as an interface array instead. Single embedded groups (as on `ApplicationEntity`) are fine.
 
 ### Shared utilities
 
