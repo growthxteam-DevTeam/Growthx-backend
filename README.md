@@ -51,7 +51,8 @@ need an `Authorization: Bearer <accessToken>` header (from `POST /auth/login`); 
 | `POST` | `/auth/login`                    | Log in with email + password, returns a JWT (JSON)                         |
 | `GET`  | `/discussions/:classId/comments` | **JWT** — list a class's discussion comments with their replies            |
 | `POST` | `/discussions/:classId/comments` | **JWT** — post a comment or a reply                                        |
-| `POST` | `/discussions/comments/:id/like` | **JWT** — like / unlike a comment (toggle)                                 |
+| `POST` | `/discussions/comments/:id/like` | **JWT** — like a comment (toggle; clears an existing dislike)              |
+| `POST` | `/discussions/comments/:id/dislike` | **JWT** — dislike a comment (toggle; clears an existing like)           |
 | `GET`  | `/quizzes/:quizId`               | **JWT** — a quiz's questions (no answer key) and the caller's last attempt |
 | `POST` | `/quizzes/:quizId/submissions`   | **JWT** — submit answers; graded and the score is saved                    |
 
@@ -256,12 +257,14 @@ class.
 
 ### GET /discussions/:classId/comments
 
-| Query   | Type    | Required | Notes                                             |
-| ------- | ------- | -------- | ------------------------------------------------- |
-| `limit` | integer | No       | Top-level comments to return, 1-50 (default `10`) |
+| Query   | Type    | Required | Notes                                                          |
+| ------- | ------- | -------- | --------------------------------------------------------------- |
+| `limit` | integer | No       | Top-level comments to return, 1-50 (default `10`)               |
+| `sort`  | string  | No       | `newest` (default), `oldest`, or `top` (highest `likes` first)  |
 
-Top-level comments come back newest first; each one carries all its replies, oldest first. "Show more" in the UI simply
-requests a larger `limit`; `total` is the number of top-level comments in the thread.
+Top-level comments come back ordered by `sort`; pinned comments always sort first regardless of `sort`. Each one
+carries all its replies, oldest first. "Show more" in the UI simply requests a larger `limit`; `total` is the number
+of top-level comments in the thread.
 
 **Response `200`:**
 
@@ -282,6 +285,9 @@ requests a larger `limit`; `total` is the number of top-level comments in the th
         "content": "Great session!",
         "likes": 2,
         "likedByMe": false,
+        "dislikedByMe": false,
+        "pinned": false,
+        "staffPost": false,
         "createdAt": "2026-10-08T12:00:00.000Z",
         "replies": [
           {
@@ -294,6 +300,9 @@ requests a larger `limit`; `total` is the number of top-level comments in the th
             "content": "Thanks!",
             "likes": 0,
             "likedByMe": false,
+            "dislikedByMe": false,
+            "pinned": false,
+            "staffPost": false,
             "createdAt": "2026-10-08T12:05:00.000Z",
             "replies": []
           }
@@ -304,8 +313,9 @@ requests a larger `limit`; `total` is the number of top-level comments in the th
 }
 ```
 
-`likedByMe` is relative to the caller. The author's name and photo are copied from their application when the comment is
-posted.
+`likedByMe`/`dislikedByMe` are relative to the caller; a comment is never both liked and disliked by the same person.
+The author's name and photo are copied from their application when the comment is posted. `pinned` and `staffPost`
+have no endpoint yet — both are set directly in the database.
 
 ### POST /discussions/:classId/comments
 
@@ -320,17 +330,23 @@ JSON body.
 
 ### POST /discussions/comments/:id/like
 
-No body. Toggles the caller's like on the comment.
+No body. Toggles the caller's like on the comment; clears an existing dislike.
 
-**Response `200`:** `{ "status": "Success", "statusCode": 200, "data": { "likes": 3, "likedByMe": true } }`
+**Response `200`:** `{ "status": "Success", "statusCode": 200, "data": { "likes": 3, "likedByMe": true, "dislikedByMe": false } }`
 
-**Errors (all three routes):**
+### POST /discussions/comments/:id/dislike
+
+No body. Toggles the caller's dislike on the comment; clears an existing like.
+
+**Response `200`:** `{ "status": "Success", "statusCode": 200, "data": { "likes": 2, "likedByMe": false, "dislikedByMe": true } }`
+
+**Errors (all routes above):**
 
 | Status | When                                                                                                                             |
 | ------ | -------------------------------------------------------------------------------------------------------------------------------- |
-| `400`  | Invalid `classId`/`limit`/`content`/`parentId`, an unknown field is sent, or `parentId` is not a top-level comment of this class |
+| `400`  | Invalid `classId`/`limit`/`sort`/`content`/`parentId`, an unknown field is sent, or `parentId` is not a top-level comment of this class |
 | `401`  | Missing, malformed, forged or expired token, or the account no longer exists                                                     |
-| `404`  | The comment to like or reply to doesn't exist                                                                                    |
+| `404`  | The comment to react to, like, dislike or reply to doesn't exist                                                                 |
 
 ---
 

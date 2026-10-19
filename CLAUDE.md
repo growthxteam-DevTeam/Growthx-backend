@@ -42,10 +42,14 @@ counterpart.
 ### Discussions module
 
 `src/discussions/` backs the class page's comment thread: `GET`/`POST /discussions/:classId/comments` and
-`POST /discussions/comments/:id/like`, all behind `JwtAuthGuard`. Comments live in their own `discussion_comments`
-collection with the author's name/photo copied in at write time, replies are one level deep (`parentId`), and likes
-are a `likedBy` array of author ids. There is no websocket; the frontend polls. Mongo operators (`$in`, `null`
-matching) don't type-check in TypeORM where clauses, so the service funnels them through the `mongoWhere()` cast.
+`POST /discussions/comments/:id/like` / `.../dislike`, all behind `JwtAuthGuard`. Comments live in their own
+`discussion_comments` collection with the author's name/photo copied in at write time, replies are one level deep
+(`parentId`), and likes/dislikes are mutually exclusive `likedBy`/`dislikedBy` arrays of author ids (`likeCount` is
+kept equal to `likedBy.length` so `top` sort can happen in the database). `GET` takes a `sort` query
+(`newest` | `oldest` | `top`); pinned comments (`pinned: true`) always sort first regardless. `pinned` and
+`staffPost` have no endpoint yet — set them directly in MongoDB. There is no websocket; the frontend polls. Mongo
+operators (`$in`, `null` matching) don't type-check in TypeORM where clauses, so the service funnels them through
+the `mongoWhere()` cast.
 
 ### Quizzes module
 
