@@ -46,6 +46,21 @@ export class ApplicationEntity {
   @Column({ nullable: true })
   passwordHash?: string;
 
+  // True for applications created once payment was introduced. Older records leave it unset, so
+  // applicants who already hold a GS code aren't suddenly asked to pay.
+  @Exclude()
+  @Column({ nullable: true })
+  paymentRequired?: boolean;
+
+  // Bachs checkout session id; the payment webhook finds the application by it.
+  @Exclude()
+  @Column({ nullable: true })
+  bachsCheckoutId?: string;
+
+  // Set once Bachs confirms the payment; the GS code email goes out at that moment.
+  @Column({ nullable: true })
+  paidAt?: Date;
+
   @Column({
     type: 'enum',
     enum: ApplicationStatus,

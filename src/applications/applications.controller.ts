@@ -32,6 +32,15 @@ export class ApplicationsController {
   }
 
   // Public — the GS code emailed after submission is the only credential.
+  // Public — called by Bachs. Always answers 200 once handled; the service re-checks the payment
+  // with Bachs itself, so the body is never trusted.
+  @Post('payment-webhook')
+  @HttpCode(200)
+  async paymentWebhook(@Body() body: unknown) {
+    await this.applicationsService.handlePaymentWebhook(body);
+    return { received: true };
+  }
+
   @Post('create-password')
   @HttpCode(200)
   createPassword(@Body() createPasswordDto: CreatePasswordDto) {

@@ -2,8 +2,8 @@
 
 NestJS 11 REST API for the Growth X admissions flow. MongoDB via TypeORM's `mongodb` connector (not Mongoose),
 Cloudinary for passport photos, nodemailer for applicant emails, bcrypt for password hashing, JWT for login tokens.
-An applicant's account is their application record: they get a one-time GS code by email, set a password with it, then
-log in with email + password. The returned JWT unlocks the class discussion and quiz endpoints.
+An applicant's account is their application record: they pay through Bachs first, then get a one-time GS code by email,
+set a password with it, then log in with email + password. The returned JWT unlocks the class discussion and quiz endpoints.
 
 ## Getting Started
 
@@ -29,6 +29,13 @@ npm run start:dev      # http://localhost:<PORT>/api/v1
 | `MAIL_FROM`             | No (defaults to `SMTP_USER`)             | "From" address on outgoing email.                                                    |
 | `FRONTEND_URL`          | No (defaults to `http://localhost:3000`) | Frontend base URL used to build the `/create-password?gsCode=...` link in the email. |
 | `JWT_SECRET`            | Yes                                      | Secret used to sign login tokens. The app won't start without it.                    |
+| `BACHS_API_KEY`         | Yes                                      | Bachs secret key. `sk_sandbox_...` targets the sandbox API, `sk_live_...` the live API. |
+| `BACHS_BASE_URL`        | No (derived from the key prefix)         | Override the Bachs API base URL.                                                     |
+| `BACHS_PRODUCT_ID`      | One of this or amount + currency         | Bachs product to charge for the program fee. Wins over `BACHS_AMOUNT`.               |
+| `BACHS_AMOUNT`          | With `BACHS_CURRENCY`                    | Fixed program fee as a decimal string (e.g. `"150000"`) when no product id is set.   |
+| `BACHS_CURRENCY`        | With `BACHS_AMOUNT`                      | Currency code for `BACHS_AMOUNT` (e.g. `NGN`).                                       |
+| `BACHS_SUCCESS_URL`     | No (`<FRONTEND_URL>/success`)            | Where Bachs sends the payer after paying. Must be public: Bachs rejects `localhost`. |
+| `BACHS_CANCEL_URL`      | No (`<FRONTEND_URL>/cancel`)             | Where Bachs sends the payer if they cancel. Must be public too.                      |
 
 Never commit real values for the secret variables; `.env` is gitignored and `.env.example` must stay blank for them.
 Generate a JWT secret with `openssl rand -hex 32`.
@@ -47,6 +54,7 @@ need an `Authorization: Bearer <accessToken>` header (from `POST /auth/login`); 
 | ------ | -------------------------------- | -------------------------------------------------------------------------- |
 | `GET`  | `/`                              | Scaffold health check — returns the plain string `Hello World!`            |
 | `POST` | `/applications`                  | Submit an onboarding application (`multipart/form-data`)                   |
+| `POST` | `/applications/payment-webhook`  | Bachs payment webhook; confirms payment and emails the GS code (JSON)      |
 | `POST` | `/applications/create-password`  | Set an account password using the emailed GS code (JSON)                   |
 | `POST` | `/auth/login`                    | Log in with email + password, returns a JWT (JSON)                         |
 | `GET`  | `/discussions/:classId/comments` | **JWT** — list a class's discussion comments with their replies            |
@@ -97,10 +105,13 @@ flat; the grouping in the response is only how the record is stored
 **Passport photo:** streamed straight to Cloudinary (folder `growth-x/passport-photos`); nothing is written to local
 disk. The record stores the returned `secure_url` as `submit.passportPhotoUrl`.
 
-**GS code and email:** every saved application gets a random 12-character `gsCode` (stored on the record, never
-returned in any response). An "application received" email is then sent to `applicationPortal.email` with a link to
-`<FRONTEND_URL>/create-password?gsCode=<code>`, and the code is also printed in the email body. The email is sent in
-the background: a mail failure is logged and does not fail the request.
+**Payment, GS code and email:** there is no review step. After the record is saved, a Bachs checkout is created
+(`POST /v1/checkout-sessions`, with `metadata.application_id`) and a "complete your payment" email carrying the
+checkout link is sent to `applicationPortal.email`. The GS code (a random 12-character `gsCode`, stored on the record
+and never returned) is **not** sent yet. Once Bachs reports the payment (see `POST /applications/payment-webhook`),
+a second email goes out with the GS code and a link to `<FRONTEND_URL>/create-password?gsCode=<code>`. Emails are sent
+in the background: a mail failure is logged and does not fail the request. If the Bachs checkout can't be created, the
+saved application is deleted again and the request fails with `503`, so the applicant can resubmit.
 
 **Response `201`:**
 
@@ -144,11 +155,12 @@ the background: a mail failure is logged and does not fail the request.
     },
     "status": "pending",
     "createdAt": "..."
-  }
+  },
+  "paymentUrl": "https://checkout.bachs.io/..."
 }
 ```
 
-`accessibilitySupport.accessibilityNeed` and `accessibilityNotes` are only present when `hasAccessibilityNeeds` is
+`paymentUrl` is the Bachs hosted checkout for this application (also emailed). `accessibilitySupport.accessibilityNeed` and `accessibilityNotes` are only present when `hasAccessibilityNeeds` is
 `"yes"` (and the notes were filled in).
 `status` is one of `pending` (default), `reviewed`, `accepted`, `rejected`.
 
@@ -159,6 +171,20 @@ the background: a mail failure is logged and does not fail the request.
 | `400`  | Any field fails validation, or an unknown field is sent |
 | `413`  | `passportPhoto` is over 10 MB                           |
 | `415`  | `passportPhoto` is not JPEG/PNG                         |
+| `503`  | The Bachs checkout could not be created; nothing saved  |
+
+### POST /applications/payment-webhook
+
+Public, called by Bachs. Configure this URL (`<backend>/api/v1/applications/payment-webhook`) as a webhook endpoint in
+the Bachs dashboard for the `collection.succeeded` / `checkout.completed` events. The body is Bachs' event envelope
+(`{ id, type, created_at, organization_id, data }`); only the checkout id in `data` is read. The body itself is never
+trusted: the backend fetches the checkout session from Bachs (`GET /v1/checkout-sessions/{id}`) with the API key and
+only marks the application paid (`paidAt`) when Bachs says the payment succeeded, then emails the GS code. Repeat
+deliveries are ignored once paid. Unknown checkout ids are ignored. Always answers `200 { "received": true }`; if
+Bachs can't be reached the request fails so Bachs retries.
+
+> `X-Bachs-Signature` verification is not implemented yet because the signing scheme wasn't in the docs we read. The
+> re-fetch above is what keeps forged requests from marking anyone paid.
 
 ### POST /applications/create-password
 
@@ -175,8 +201,9 @@ sets a password, authenticated only by the GS code.
 ```
 
 The password is hashed with bcrypt and stored on the application as `passwordHash` (never returned). A GS code can be
-used once: after a password is set, the same code is rejected. The endpoint does not check the application's
-`status`, so a code works as soon as it is emailed.
+used once: after a password is set, the same code is rejected. The code is only emailed after payment, and the endpoint
+also refuses applications created since payment was introduced that haven't paid. Applications from before that (no
+payment record) are not gated. It does not check the application's `status`.
 
 **Response `200`:**
 
@@ -193,6 +220,7 @@ used once: after a password is set, the same code is rejected. The endpoint does
 | Status | When                                                                |
 | ------ | ------------------------------------------------------------------- |
 | `400`  | `gsCode` doesn't match any application, or a field fails validation |
+| `403`  | The application requires payment and hasn't paid yet                |
 | `409`  | The GS code has already been used to set a password                 |
 
 ---

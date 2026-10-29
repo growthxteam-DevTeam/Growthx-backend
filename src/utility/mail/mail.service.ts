@@ -2,7 +2,13 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createTransport, type Transporter } from 'nodemailer';
 
-interface ApplicationReceivedMail {
+interface PaymentRequestMail {
+  to: string;
+  firstName: string;
+  paymentUrl: string;
+}
+
+interface PaymentConfirmedMail {
   to: string;
   firstName: string;
   gsCode: string;
@@ -35,11 +41,40 @@ export class MailService {
     });
   }
 
-  async sendApplicationReceived({
-    to,
-    firstName,
-    gsCode,
-  }: ApplicationReceivedMail) {
+  // Sent right after submission: the applicant pays first, the GS code follows.
+  async sendPaymentRequest({ to, firstName, paymentUrl }: PaymentRequestMail) {
+    const text = [
+      `Hi ${firstName},`,
+      '',
+      'Thank you for applying to Growth X. We have received your application.',
+      '',
+      'Next step: complete your payment to secure your place.',
+      `Pay here: ${paymentUrl}`,
+      '',
+      'Once your payment is confirmed, we will email you a link to set up your Growth Space account.',
+      '',
+      'The Growth X Team',
+    ].join('\n');
+
+    const html = `
+      <p>Hi ${escapeHtml(firstName)},</p>
+      <p>Thank you for applying to Growth X. We have received your application.</p>
+      <p><strong>Next step:</strong> complete your payment to secure your place.</p>
+      <p><a href="${escapeHtml(paymentUrl)}">Pay now</a></p>
+      <p>Once your payment is confirmed, we will email you a link to set up your Growth Space account.</p>
+      <p>The Growth X Team</p>
+    `;
+
+    await this.deliver({
+      to,
+      subject: 'Complete your Growth X payment',
+      text,
+      html,
+    });
+  }
+
+  // Sent once Bachs confirms the payment: carries the GS code that unlocks the dashboard.
+  async sendPaymentConfirmed({ to, firstName, gsCode }: PaymentConfirmedMail) {
     const frontendUrl =
       this.config.get<string>('FRONTEND_URL') ?? 'http://localhost:3000';
     const onboardingUrl = new URL('/create-password', frontendUrl);
@@ -49,8 +84,7 @@ export class MailService {
     const text = [
       `Hi ${firstName},`,
       '',
-      'Thank you for applying to Growth X. We have received your application.',
-      'We review every application personally. If selected, you will hear from us within 5 business days.',
+      'Your payment is confirmed. Welcome to Growth X!',
       '',
       'Next step: create your password to set up your Growth Space account.',
       `Open this link: ${link}`,
@@ -61,18 +95,35 @@ export class MailService {
 
     const html = `
       <p>Hi ${escapeHtml(firstName)},</p>
-      <p>Thank you for applying to Growth X. We have received your application.</p>
-      <p>We review every application personally. If selected, you will hear from us within 5 business days.</p>
+      <p>Your payment is confirmed. Welcome to Growth X!</p>
       <p><strong>Next step:</strong> create your password to set up your Growth Space account.</p>
       <p><a href="${escapeHtml(link)}">Create your password</a></p>
       <p>Your GS Code: <strong>${escapeHtml(gsCode)}</strong></p>
       <p>The Growth X Team</p>
     `;
 
+    await this.deliver({
+      to,
+      subject: 'Payment confirmed: access your Growth X dashboard',
+      text,
+      html,
+    });
+  }
+
+  private async deliver({
+    to,
+    subject,
+    text,
+    html,
+  }: {
+    to: string;
+    subject: string;
+    text: string;
+    html: string;
+  }) {
     const from =
       this.config.get<string>('MAIL_FROM') ??
       this.config.get<string>('SMTP_USER');
-    const subject = 'We have received your Growth X application';
 
     const resendApiKey = this.config.get<string>('RESEND_API_KEY');
     const provider = resendApiKey ? 'Resend' : 'SMTP';

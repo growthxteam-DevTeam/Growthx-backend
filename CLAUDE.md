@@ -29,8 +29,8 @@ route prefix is `api/v1`, CORS is enabled globally ([src/main.ts](src/main.ts)).
 Standard Nest layout per domain: `*.module.ts` / `*.controller.ts` / `*.service.ts` / `dto/` / `entities/`.
 
 `AppModule` ([src/app.module.ts](src/app.module.ts)) imports `ApplicationsModule`, `AuthModule` and
-`DiscussionsModule`. An applicant's account _is_ their application record: the one-time `gsCode` emailed after
-submission is exchanged via `POST /applications/create-password` for a bcrypt `passwordHash`, then `POST /auth/login`
+`DiscussionsModule`. An applicant's account _is_ their application record: the one-time `gsCode`, emailed only after
+the Bachs payment is confirmed, is exchanged via `POST /applications/create-password` for a bcrypt `passwordHash`, then `POST /auth/login`
 (`src/auth/`) verifies email + password and returns a JWT signed with `JWT_SECRET`.
 
 Protected routes opt in per controller/route with `@UseGuards(JwtAuthGuard)` (`src/auth/jwt-auth.guard.ts`, which
@@ -61,9 +61,12 @@ comes back as `lastAttempt`. Adding a quiz means adding an entry to `QUIZZES` an
 
 ### Applications module
 
-Two routes (see [README.md](README.md) for payloads and response shapes): `POST /applications` accepts the frontend
-onboarding wizard as `multipart/form-data`, and `POST /applications/create-password` (JSON) sets the password from
-the emailed GS code. `gsCode` and `passwordHash` are `@Exclude()`d on the entity — keep
+Three routes (see [README.md](README.md) for payloads and response shapes): `POST /applications` accepts the frontend
+onboarding wizard as `multipart/form-data`, creates a Bachs checkout and emails the payment link (no GS code yet);
+`POST /applications/payment-webhook` (Bachs calls it) re-fetches the checkout from Bachs, sets `paidAt` and emails the
+GS code; `POST /applications/create-password` (JSON) sets the password from that GS code and 403s unpaid applications
+that have `paymentRequired`. Never trust the webhook body — only the re-fetched session. `src/utility/bachs/` holds
+`BachsService`. `gsCode` and `passwordHash` are `@Exclude()`d on the entity — keep
 `ClassSerializerInterceptor` on the controller so they never leak.
 
 - [applications.controller.ts](src/applications/applications.controller.ts) uses
@@ -95,8 +98,7 @@ then throws `document[...].map is not a function` when loading (this broke `GET 
 
 ### Shared utilities
 
-`src/utility/cloudinary/` (module/provider/service/constants), `src/utility/mail/` (nodemailer `MailService`,
-sends the application-received email with the `gsCode` create-password link) and `src/utility/common/` (shared
+`src/utility/cloudinary/` (module/provider/service/constants), `src/utility/mail/` (`MailService`: the payment-request email and, after payment, the `gsCode` create-password email) and `src/utility/common/` (shared
 enums such as `application-status.enum.ts`, `generate-gs-code.ts`). Put cross-module code here.
 
 ## Environment
@@ -104,4 +106,5 @@ enums such as `application-status.enum.ts`, `generate-gs-code.ts`). Put cross-mo
 Loaded via `@nestjs/config` (`isGlobal: true`) from `.env`. Required: `MONGODB_URI`, `CLOUDINARY_CLOUD_NAME`,
 `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET`, `SMTP_HOST`, `SMTP_USER`, `SMTP_PASS`, `JWT_SECRET` (the app won't
 boot without it). Optional: `PORT`,
-`SMTP_PORT` (587), `MAIL_FROM`, `FRONTEND_URL` (`http://localhost:3000`).
+`SMTP_PORT` (587), `MAIL_FROM`, `FRONTEND_URL` (`http://localhost:3000`). Payments need `BACHS_API_KEY` plus either
+`BACHS_PRODUCT_ID` or `BACHS_AMOUNT` + `BACHS_CURRENCY` (`POST /applications` returns `503` without them).
