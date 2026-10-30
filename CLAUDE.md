@@ -31,7 +31,10 @@ Standard Nest layout per domain: `*.module.ts` / `*.controller.ts` / `*.service.
 `AppModule` ([src/app.module.ts](src/app.module.ts)) imports `ApplicationsModule`, `AuthModule` and
 `DiscussionsModule`. An applicant's account _is_ their application record: the one-time `gsCode`, emailed only after
 the Bachs payment is confirmed, is exchanged via `POST /applications/create-password` for a bcrypt `passwordHash`, then `POST /auth/login`
-(`src/auth/`) verifies email + password and returns a JWT signed with `JWT_SECRET`.
+(`src/auth/`) verifies email + password and returns a JWT signed with `JWT_SECRET`. `POST /auth/forgot-password` emails a
+single-use reset link (only the SHA-256 of the token is stored, 1 h expiry, same 200 whether or not the email exists) and
+`POST /auth/reset-password` swaps the password for it. To clear the token fields set them to `null` — TypeORM skips
+`undefined` on save.
 
 Protected routes opt in per controller/route with `@UseGuards(JwtAuthGuard)` (`src/auth/jwt-auth.guard.ts`, which
 verifies the bearer token and sets `request.user = { id, email }`) and read the caller with `@CurrentUser()`.
@@ -106,7 +109,7 @@ then throws `document[...].map is not a function` when loading (this broke `GET 
 
 ### Shared utilities
 
-`src/utility/cloudinary/` (module/provider/service/constants), `src/utility/mail/` (`MailService`: the payment-request email and, after payment, the `gsCode` create-password email) and `src/utility/common/` (shared
+`src/utility/cloudinary/` (module/provider/service/constants), `src/utility/mail/` (`MailService`: the payment-request email, after payment the `gsCode` create-password email, and the password-reset email) and `src/utility/common/` (shared
 enums such as `application-status.enum.ts`, `generate-gs-code.ts`). Put cross-module code here.
 
 ## Environment

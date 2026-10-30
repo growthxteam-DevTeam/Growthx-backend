@@ -27,7 +27,7 @@ npm run start:dev      # http://localhost:<PORT>/api/v1
 | `SMTP_USER`             | Yes                                      | SMTP username.                                                                       |
 | `SMTP_PASS`             | Yes                                      | SMTP password.                                                                       |
 | `MAIL_FROM`             | No (defaults to `SMTP_USER`)             | "From" address on outgoing email.                                                    |
-| `FRONTEND_URL`          | No (defaults to `http://localhost:3000`) | Frontend base URL used to build the `/create-password?gsCode=...` link in the email. |
+| `FRONTEND_URL`          | No (defaults to `http://localhost:3000`) | Frontend base URL used to build the `/create-password?gsCode=...` and `/reset-password?token=...` email links. |
 | `JWT_SECRET`            | Yes                                      | Secret used to sign login tokens. The app won't start without it.                    |
 | `BACHS_API_KEY`         | Yes                                      | Bachs secret key. `sk_sandbox_...` targets the sandbox API, `sk_live_...` the live API. |
 | `BACHS_BASE_URL`        | No (derived from the key prefix)         | Override the Bachs API base URL.                                                     |
@@ -57,6 +57,8 @@ need an `Authorization: Bearer <accessToken>` header (from `POST /auth/login`); 
 | `POST` | `/applications/payment-webhook`  | Bachs payment webhook; confirms payment and emails the GS code (JSON)      |
 | `POST` | `/applications/create-password`  | Set an account password using the emailed GS code (JSON)                   |
 | `POST` | `/auth/login`                    | Log in with email + password, returns a JWT (JSON)                         |
+| `POST` | `/auth/forgot-password`          | Email a single-use password-reset link (JSON)                              |
+| `POST` | `/auth/reset-password`           | Set a new password using the emailed reset token (JSON)                    |
 | `GET`  | `/discussions/:classId/comments` | **JWT** — list a class's discussion comments with their replies            |
 | `POST` | `/discussions/:classId/comments` | **JWT** — post a comment or a reply                                        |
 | `POST` | `/discussions/comments/:id/like` | **JWT** — like a comment (toggle; clears an existing dislike)              |
@@ -65,7 +67,7 @@ need an `Authorization: Bearer <accessToken>` header (from `POST /auth/login`); 
 | `POST` | `/quizzes/:quizId/submissions`   | **JWT** — submit answers; graded and the score is saved                    |
 | `GET`  | `/resources`                     | **JWT** — resource vault: curated articles and videos, by category or search |
 
-There is no endpoint yet to read applications back, change their status, or reset a password. Review currently happens
+There is no endpoint yet to read applications back or change their status. Review currently happens
 by querying MongoDB directly (Atlas or `mongosh`).
 
 ---
@@ -320,6 +322,67 @@ user with the `@CurrentUser()` decorator; a missing, malformed, forged or expire
 | ------ | ------------------------------------------------------------------------------------------------------- |
 | `400`  | A field fails validation, or an unknown field is sent                                                   |
 | `401`  | Wrong password, unknown email, or no password set yet (all return the same "Invalid email or password") |
+
+### POST /auth/forgot-password
+
+Public. JSON body. Backs the frontend `/forgot-password` page. If an application with that email (matched
+case-insensitively) has set a password, a random reset token is generated, only its SHA-256 hash and a 1-hour expiry are
+stored on the application (`passwordResetTokenHash`, `passwordResetExpiresAt`, never returned), and an email goes out
+with a link to `<FRONTEND_URL>/reset-password?token=<token>`. Requesting again replaces the previous token. The email is
+sent in the background, and the response is identical whether or not the email has an account, so it can't be used to
+find out who is registered.
+
+| Field   | Type   | Required | Notes       |
+| ------- | ------ | -------- | ----------- |
+| `email` | string | Yes      | Valid email |
+
+```json
+{ "email": "jane@doe.com" }
+```
+
+**Response `200`:**
+
+```json
+{
+  "status": "Success",
+  "statusCode": 200,
+  "message": "If an account exists for that email, a password reset link has been sent"
+}
+```
+
+**Errors:** `400` when `email` is missing or invalid.
+
+### POST /auth/reset-password
+
+Public. JSON body. Backs the frontend `/reset-password` page (the link from the email carries the token).
+
+| Field      | Type   | Required | Notes                                                                                 |
+| ---------- | ------ | -------- | ------------------------------------------------------------------------------------- |
+| `token`    | string | Yes      | The token from the emailed link                                                       |
+| `password` | string | Yes      | min 8 chars, with at least one number, one uppercase letter and one special character |
+
+```json
+{ "token": "<token from the email>", "password": "Good#Pass2" }
+```
+
+The new password replaces `passwordHash`, and the token is cleared, so each link works once. Existing JWTs stay valid
+until they expire.
+
+**Response `200`:**
+
+```json
+{
+  "status": "Success",
+  "statusCode": 200,
+  "message": "Password reset successfully"
+}
+```
+
+**Errors:**
+
+| Status | When                                                                                |
+| ------ | ----------------------------------------------------------------------------------- |
+| `400`  | Token unknown, already used or expired ("Invalid or expired reset link"), or a field fails validation |
 
 ---
 

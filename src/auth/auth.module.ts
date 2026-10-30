@@ -4,6 +4,7 @@ import { JwtModule } from '@nestjs/jwt';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { ApplicationEntity } from 'src/applications/entities/application.entity';
+import { MailModule } from 'src/utility/mail/mail.module';
 
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
@@ -11,6 +12,7 @@ import { AuthService } from './auth.service';
 @Module({
   imports: [
     TypeOrmModule.forFeature([ApplicationEntity]),
+    MailModule,
     JwtModule.registerAsync({
       inject: [ConfigService],
       useFactory: (config: ConfigService) => ({

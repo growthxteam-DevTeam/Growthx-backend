@@ -14,6 +14,12 @@ interface PaymentConfirmedMail {
   gsCode: string;
 }
 
+interface PasswordResetMail {
+  to: string;
+  firstName: string;
+  token: string;
+}
+
 const escapeHtml = (value: string) =>
   value
     .replace(/&/g, '&amp;')
@@ -105,6 +111,41 @@ export class MailService {
     await this.deliver({
       to,
       subject: 'Payment confirmed: access your Growth X dashboard',
+      text,
+      html,
+    });
+  }
+
+  // Sent by POST /auth/forgot-password: carries the single-use link to the frontend's reset page.
+  async sendPasswordReset({ to, firstName, token }: PasswordResetMail) {
+    const frontendUrl =
+      this.config.get<string>('FRONTEND_URL') ?? 'http://localhost:3000';
+    const resetUrl = new URL('/reset-password', frontendUrl);
+    resetUrl.searchParams.set('token', token);
+    const link = resetUrl.toString();
+
+    const text = [
+      `Hi ${firstName},`,
+      '',
+      'We received a request to reset your Growth X password.',
+      `Open this link to choose a new one (it expires in 1 hour): ${link}`,
+      '',
+      'If you did not ask for this, you can ignore this email. Your password will not change.',
+      '',
+      'The Growth X Team',
+    ].join('\n');
+
+    const html = `
+      <p>Hi ${escapeHtml(firstName)},</p>
+      <p>We received a request to reset your Growth X password.</p>
+      <p><a href="${escapeHtml(link)}">Reset your password</a> (the link expires in 1 hour)</p>
+      <p>If you did not ask for this, you can ignore this email. Your password will not change.</p>
+      <p>The Growth X Team</p>
+    `;
+
+    await this.deliver({
+      to,
+      subject: 'Reset your Growth X password',
       text,
       html,
     });
