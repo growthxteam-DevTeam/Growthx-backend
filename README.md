@@ -63,6 +63,7 @@ need an `Authorization: Bearer <accessToken>` header (from `POST /auth/login`); 
 | `POST` | `/discussions/comments/:id/dislike` | **JWT** — dislike a comment (toggle; clears an existing like)           |
 | `GET`  | `/quizzes/:quizId`               | **JWT** — a quiz's questions (no answer key) and the caller's last attempt |
 | `POST` | `/quizzes/:quizId/submissions`   | **JWT** — submit answers; graded and the score is saved                    |
+| `GET`  | `/resources`                     | **JWT** — resource vault: curated articles and videos, by category or search |
 
 There is no endpoint yet to read applications back, change their status, or reset a password. Review currently happens
 by querying MongoDB directly (Atlas or `mongosh`).
@@ -222,6 +223,55 @@ payment record) are not gated. It does not check the application's `status`.
 | `400`  | `gsCode` doesn't match any application, or a field fails validation |
 | `403`  | The application requires payment and hasn't paid yet                |
 | `409`  | The GS code has already been used to set a password                 |
+
+---
+
+## Resources
+
+Backs the dashboard's Resource Vault. No database and no API keys: the backend reads a fixed list of trusted
+publishers' RSS/Atom feeds (TechCabal, Disrupt Africa, TechCrunch, Sifted, Y Combinator, Feld Thoughts, Lenny's
+Newsletter, SaaStr, Andrew Chen, Paul Graham, and the Y Combinator, Sequoia and a16z YouTube channels), see
+`src/resources/resources.sources.ts`. That list is what makes the content "verified": a new source is added there and
+nowhere else. Feeds are cached in memory for 30 minutes; a feed that fails to load is skipped (its last good copy is used
+if there is one), so one broken publisher never breaks the vault. Feeds only carry recent items (YouTube: the latest 15
+videos per channel), so each category shows recent material, not an archive.
+
+### GET /resources
+
+**JWT.** Query parameters, all optional:
+
+| Param      | Type                                           | Notes                                                                            |
+| ---------- | ---------------------------------------------- | -------------------------------------------------------------------------------- |
+| `category` | `"pre-seed" \| "pitch" \| "raise" \| "pricing"` | Keeps items whose title/summary match that category's keywords                   |
+| `q`        | string, max 100 chars                          | Free-text search; filler words dropped, whole-word matching, best matches only   |
+| `limit`    | integer 1-30 (default 12)                      |                                                                                  |
+
+**Response `200`:**
+
+```json
+{
+  "status": "Success",
+  "statusCode": 200,
+  "data": [
+    {
+      "id": "3f2a9c1d8e7b4a60",
+      "title": "How to build an investment thesis and win early-stage deals",
+      "url": "https://sifted.eu/articles/...",
+      "source": "Sifted",
+      "type": "article",
+      "summary": "First 220 characters of the publisher's own summary...",
+      "imageUrl": "https://.../thumbnail.jpg",
+      "publishedAt": "2026-10-29T08:00:00.000Z",
+      "readMinutes": 4
+    }
+  ]
+}
+```
+
+`url` is always the publisher's own `http(s)` page: the frontend opens it in a new tab, so readers leave our app.
+`imageUrl`, `publishedAt` and `readMinutes` can be `null` (`readMinutes` is only set for articles whose feed includes
+the full text). `type` is `"article"` or `"video"`. Errors: `400` for an unknown `category` or a bad `q`/`limit`, `401`
+without a valid token.
 
 ---
 

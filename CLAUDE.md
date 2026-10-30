@@ -59,6 +59,14 @@ its points only when the chosen options exactly match the correct set (so multi-
 questions score zero. Every submission is saved as a `quiz_attempts` document (retakes allowed), and the latest one
 comes back as `lastAttempt`. Adding a quiz means adding an entry to `QUIZZES` and pointing the frontend's `QUIZ_ID` at it.
 
+### Resources module
+
+`src/resources/` serves the dashboard's Resource Vault: `GET /resources` (JWT) returns articles and videos pulled from the
+curated RSS/Atom feeds in `resources.sources.ts`, filtered by category keyword lists or a free-text `q`. That file is the
+only way content enters the vault ("verified" = we chose the publisher), so add a source there, after checking its feed
+answers without a key. Feeds are cached in memory for 30 minutes and a failing feed is skipped. Item links are
+validated to be `http(s)` before they reach the client. No Mongo, no env vars.
+
 ### Applications module
 
 Three routes (see [README.md](README.md) for payloads and response shapes): `POST /applications` accepts the frontend
