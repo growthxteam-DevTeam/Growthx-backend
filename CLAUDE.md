@@ -28,9 +28,9 @@ NestJS 11 REST API ("Growth X" backend), MongoDB via TypeORM's `mongodb` connect
 route prefix is `api/v1`, CORS is enabled globally ([src/main.ts](src/main.ts)). Default port is `5000`.
 Standard Nest layout per domain: `*.module.ts` / `*.controller.ts` / `*.service.ts` / `dto/` / `entities/`.
 
-`AppModule` ([src/app.module.ts](src/app.module.ts)) imports `ApplicationsModule`, `AuthModule` and
-`DiscussionsModule`. An applicant's account _is_ their application record: the one-time `gsCode`, emailed only after
-the Bachs payment is confirmed, is exchanged via `POST /applications/create-password` for a bcrypt `passwordHash`, then `POST /auth/login`
+`AppModule` ([src/app.module.ts](src/app.module.ts)) imports `AdminModule`, `ApplicationsModule`, `AuthModule`,
+`DiscussionsModule`, `QuizzesModule` and `ResourcesModule`. An applicant's account _is_ their application record: the
+one-time `gsCode`, emailed only when an admin sends the invite (`POST /admin/applications/:id/invite`), is exchanged via `POST /applications/create-password` for a bcrypt `passwordHash`, then `POST /auth/login`
 (`src/auth/`) verifies email + password and returns a JWT signed with `JWT_SECRET`. `POST /auth/forgot-password` emails a
 single-use reset link (only the SHA-256 of the token is stored, 1 h expiry, same 200 whether or not the email exists) and
 `POST /auth/reset-password` swaps the password for it. To clear the token fields set them to `null` — TypeORM skips
@@ -38,9 +38,18 @@ single-use reset link (only the SHA-256 of the token is stored, 1 h expiry, same
 
 Protected routes opt in per controller/route with `@UseGuards(JwtAuthGuard)` (`src/auth/jwt-auth.guard.ts`, which
 verifies the bearer token and sets `request.user = { id, email }`) and read the caller with `@CurrentUser()`.
-`id` is the applicant's application `_id`. Nothing is guarded globally and there are no roles — ask before adding
-them. The frontend's admin-login and banner RTK endpoints (`/admin/auth/login`, banners) still have no backend
-counterpart.
+`id` is the applicant's application `_id`. Nothing is guarded globally. The only role is admin (below); the frontend's
+banner RTK endpoints still have no backend counterpart.
+
+### Admin module
+
+`src/admin/` is the staff side: `POST /admin/auth/login`, `GET /admin/applications` (paginated: `page`, `limit`, default 10, with a `meta` block) and
+`POST /admin/applications/:id/invite` and `/reject`, the latter three behind `AdminGuard`. Admins are `AdminEntity` documents in the
+`admins` collection, seeded on boot by `AdminSeederService` (dev defaults outside production, `ADMIN_EMAIL` /
+`ADMIN_PASSWORD` in production; an existing admin is only touched to apply an explicitly set `ADMIN_PASSWORD`). Admin and applicant JWTs share `JWT_SECRET` and are
+told apart by the `role: "admin"` claim: `AdminGuard` requires it and `JwtAuthGuard` rejects it. List/invite responses are
+built field by field (`toAdminView`) so `gsCode` and `passwordHash` never leave the server. The invite and rejection emails are
+awaited (unlike the fire-and-forget ones) so the admin sees a failure; a rejected application can no longer create-password. Seed credentials are documented in README.md.
 
 ### Discussions module
 
@@ -73,12 +82,16 @@ validated to be `http(s)` before they reach the client. No Mongo, no env vars.
 ### Applications module
 
 Three routes (see [README.md](README.md) for payloads and response shapes): `POST /applications` accepts the frontend
-onboarding wizard as `multipart/form-data`, creates a Bachs checkout and emails the payment link (no GS code yet);
-`POST /applications/payment-webhook` (Bachs calls it) re-fetches the checkout from Bachs, sets `paidAt` and emails the
-GS code; `POST /applications/create-password` (JSON) sets the password from that GS code and 403s unpaid applications
-that have `paymentRequired`. Never trust the webhook body — only the re-fetched session. `src/utility/bachs/` holds
-`BachsService`. `gsCode` and `passwordHash` are `@Exclude()`d on the entity — keep
-`ClassSerializerInterceptor` on the controller so they never leak.
+onboarding wizard as `multipart/form-data`, saves it and emails "we'll review your profile" (no payment, no GS code
+yet); `POST /applications/create-password` (JSON) sets the password from the GS code the admin invite emailed and 403s
+unpaid applications that have `paymentRequired` (legacy records only). Payment happens **after login**: the dashboard
+shows a blocking payment modal until `GET /applications/me/payment` (JWT) reports `hasPaid` (`paidAt` set), and
+`POST /applications/me/payment/checkout` (JWT) creates the Bachs checkout and returns its `paymentUrl`. The status route
+re-checks an in-flight checkout with Bachs itself, so it works even when the webhook is late or can't reach the backend.
+`POST /applications/payment-webhook` (Bachs calls it) re-fetches the checkout, sets `paidAt`, and emails the GS code only
+if the account has no password yet — never trust its body, only the re-fetched session. This is a UI gate only: no other
+route refuses unpaid accounts. `src/utility/bachs/` holds `BachsService`. `gsCode` and
+`passwordHash` are `@Exclude()`d on the entity — keep `ClassSerializerInterceptor` on the controller so they never leak.
 
 - [applications.controller.ts](src/applications/applications.controller.ts) uses
   `FileInterceptor('passportPhoto', passportPhotoMulterOptions)` — memory storage, JPEG/PNG only, 10 MB max
@@ -109,7 +122,7 @@ then throws `document[...].map is not a function` when loading (this broke `GET 
 
 ### Shared utilities
 
-`src/utility/cloudinary/` (module/provider/service/constants), `src/utility/mail/` (`MailService`: the payment-request email, after payment the `gsCode` create-password email, and the password-reset email) and `src/utility/common/` (shared
+`src/utility/cloudinary/` (module/provider/service/constants), `src/utility/mail/` (`MailService`: the application-received email, the admin invite with the `gsCode` create-password link, the rejection email, the payment-confirmed email (only for accounts with no password yet), and the password-reset email) and `src/utility/common/` (shared
 enums such as `application-status.enum.ts`, `generate-gs-code.ts`). Put cross-module code here.
 
 ## Environment
@@ -117,5 +130,6 @@ enums such as `application-status.enum.ts`, `generate-gs-code.ts`). Put cross-mo
 Loaded via `@nestjs/config` (`isGlobal: true`) from `.env`. Required: `MONGODB_URI`, `CLOUDINARY_CLOUD_NAME`,
 `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET`, `SMTP_HOST`, `SMTP_USER`, `SMTP_PASS`, `JWT_SECRET` (the app won't
 boot without it). Optional: `PORT`,
-`SMTP_PORT` (587), `MAIL_FROM`, `FRONTEND_URL` (`http://localhost:3000`). Payments need `BACHS_API_KEY` plus either
-`BACHS_PRODUCT_ID` or `BACHS_AMOUNT` + `BACHS_CURRENCY` (`POST /applications` returns `503` without them).
+`SMTP_PORT` (587), `MAIL_FROM`, `FRONTEND_URL` (`http://localhost:3000`). `ADMIN_EMAIL` / `ADMIN_PASSWORD` / `ADMIN_NAME`
+seed the admin (required in production, defaulted otherwise). Payments (taken after login) need `BACHS_API_KEY` plus either
+`BACHS_PRODUCT_ID` or `BACHS_AMOUNT` + `BACHS_CURRENCY`.

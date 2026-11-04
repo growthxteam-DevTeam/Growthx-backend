@@ -2,10 +2,20 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createTransport, type Transporter } from 'nodemailer';
 
-interface PaymentRequestMail {
+interface ApplicationReceivedMail {
   to: string;
   firstName: string;
-  paymentUrl: string;
+}
+
+interface InviteMail {
+  to: string;
+  firstName: string;
+  gsCode: string;
+}
+
+interface RejectionMail {
+  to: string;
+  firstName: string;
 }
 
 interface PaymentConfirmedMail {
@@ -47,17 +57,14 @@ export class MailService {
     });
   }
 
-  // Sent right after submission: the applicant pays first, the GS code follows.
-  async sendPaymentRequest({ to, firstName, paymentUrl }: PaymentRequestMail) {
+  // Sent right after submission: tells the applicant to expect the next steps by email.
+  async sendApplicationReceived({ to, firstName }: ApplicationReceivedMail) {
     const text = [
       `Hi ${firstName},`,
       '',
       'Thank you for applying to Growth X. We have received your application.',
       '',
-      'Next step: complete your payment to secure your place.',
-      `Pay here: ${paymentUrl}`,
-      '',
-      'Once your payment is confirmed, we will email you a link to set up your Growth Space account.',
+      'Our team will review your profile and email you the next steps, so keep an eye on your inbox.',
       '',
       'The Growth X Team',
     ].join('\n');
@@ -65,15 +72,81 @@ export class MailService {
     const html = `
       <p>Hi ${escapeHtml(firstName)},</p>
       <p>Thank you for applying to Growth X. We have received your application.</p>
-      <p><strong>Next step:</strong> complete your payment to secure your place.</p>
-      <p><a href="${escapeHtml(paymentUrl)}">Pay now</a></p>
-      <p>Once your payment is confirmed, we will email you a link to set up your Growth Space account.</p>
+      <p>Our team will review your profile and email you the next steps, so keep an eye on your inbox.</p>
       <p>The Growth X Team</p>
     `;
 
     await this.deliver({
       to,
-      subject: 'Complete your Growth X payment',
+      subject: 'We received your Growth X application',
+      text,
+      html,
+    });
+  }
+
+  // Sent when an admin invites the applicant: carries the GS code that unlocks account setup.
+  async sendInvite({ to, firstName, gsCode }: InviteMail) {
+    const frontendUrl =
+      this.config.get<string>('FRONTEND_URL') ?? 'http://localhost:3000';
+    const onboardingUrl = new URL('/create-password', frontendUrl);
+    onboardingUrl.searchParams.set('gsCode', gsCode);
+    const link = onboardingUrl.toString();
+
+    const text = [
+      `Hi ${firstName},`,
+      '',
+      'Good news: we have reviewed your application and we would love to have you in Growth X.',
+      '',
+      'Next step: create your password to set up your Growth Space account.',
+      `Open this link: ${link}`,
+      `Your GS Code: ${gsCode}`,
+      '',
+      'The Growth X Team',
+    ].join('\n');
+
+    const html = `
+      <p>Hi ${escapeHtml(firstName)},</p>
+      <p>Good news: we have reviewed your application and we would love to have you in Growth X.</p>
+      <p><strong>Next step:</strong> create your password to set up your Growth Space account.</p>
+      <p><a href="${escapeHtml(link)}">Create your password</a></p>
+      <p>Your GS Code: <strong>${escapeHtml(gsCode)}</strong></p>
+      <p>The Growth X Team</p>
+    `;
+
+    await this.deliver({
+      to,
+      subject: "You're invited to Growth X",
+      text,
+      html,
+    });
+  }
+
+  // Sent when an admin rejects the application.
+  async sendRejection({ to, firstName }: RejectionMail) {
+    const text = [
+      `Hi ${firstName},`,
+      '',
+      'Thank you for your interest in Growth X and for the time you put into your application.',
+      '',
+      'After careful review, we are unable to offer you a place in this cohort.',
+      'This was not an easy decision, and we encourage you to apply again in a future cohort.',
+      '',
+      'We wish you and your business all the best.',
+      '',
+      'The Growth X Team',
+    ].join('\n');
+
+    const html = `
+      <p>Hi ${escapeHtml(firstName)},</p>
+      <p>Thank you for your interest in Growth X and for the time you put into your application.</p>
+      <p>After careful review, we are unable to offer you a place in this cohort. This was not an easy decision, and we encourage you to apply again in a future cohort.</p>
+      <p>We wish you and your business all the best.</p>
+      <p>The Growth X Team</p>
+    `;
+
+    await this.deliver({
+      to,
+      subject: 'An update on your Growth X application',
       text,
       html,
     });

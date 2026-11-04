@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
+import { AuthModule } from 'src/auth/auth.module';
 import { BachsModule } from 'src/utility/bachs/bachs.module';
 import { CloudinaryModule } from 'src/utility/cloudinary/cloudinary.module';
 import { MailModule } from 'src/utility/mail/mail.module';
@@ -15,6 +16,7 @@ import { ApplicationEntity } from './entities/application.entity';
     CloudinaryModule,
     MailModule,
     BachsModule,
+    AuthModule,
   ],
   controllers: [ApplicationsController],
   providers: [ApplicationsService],

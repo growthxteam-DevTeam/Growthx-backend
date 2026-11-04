@@ -71,6 +71,10 @@ export class ApplicationEntity {
   @Column({ nullable: true })
   paidAt?: Date;
 
+  // Set each time an admin emails the GS code invite (POST /admin/applications/:id/invite).
+  @Column({ nullable: true })
+  invitedAt?: Date;
+
   @Column({
     type: 'enum',
     enum: ApplicationStatus,

@@ -25,7 +25,10 @@ export class JwtAuthGuard implements CanActivate {
       const payload = await this.jwtService.verifyAsync<{
         sub: string;
         email: string;
+        role?: string;
       }>(token);
+      // Admin tokens are signed with the same secret but belong to the /admin routes only.
+      if (payload.role) throw new Error('Not an applicant token');
       request.user = { id: payload.sub, email: payload.email };
     } catch {
       throw new UnauthorizedException('Invalid or expired access token');

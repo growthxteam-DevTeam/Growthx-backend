@@ -2,8 +2,10 @@
 
 NestJS 11 REST API for the Growth X admissions flow. MongoDB via TypeORM's `mongodb` connector (not Mongoose),
 Cloudinary for passport photos, nodemailer for applicant emails, bcrypt for password hashing, JWT for login tokens.
-An applicant's account is their application record: they pay through Bachs first, then get a one-time GS code by email,
-set a password with it, then log in with email + password. The returned JWT unlocks the class discussion and quiz endpoints.
+An applicant's account is their application record: they submit the onboarding form and get a "we'll review your profile"
+email, an admin reviews it and sends an invite email carrying a one-time GS code, they set a password with it, then log in
+with email + password. The returned JWT unlocks the class discussion and quiz endpoints. Admins are separate accounts in
+the `admins` collection (see [Admin](#admin)).
 
 ## Getting Started
 
@@ -29,13 +31,19 @@ npm run start:dev      # http://localhost:<PORT>/api/v1
 | `MAIL_FROM`             | No (defaults to `SMTP_USER`)             | "From" address on outgoing email.                                                    |
 | `FRONTEND_URL`          | No (defaults to `http://localhost:3000`) | Frontend base URL used to build the `/create-password?gsCode=...` and `/reset-password?token=...` email links. |
 | `JWT_SECRET`            | Yes                                      | Secret used to sign login tokens. The app won't start without it.                    |
-| `BACHS_API_KEY`         | Yes                                      | Bachs secret key. `sk_sandbox_...` targets the sandbox API, `sk_live_...` the live API. |
+| `ADMIN_EMAIL`           | Production only                          | Email of the admin account seeded on boot. Outside production it defaults to `admin@growthx.com`. |
+| `ADMIN_PASSWORD`        | Production only                          | Password of the seeded admin. Outside production it defaults to the dev password under [Admin](#admin). |
+| `ADMIN_NAME`            | No (`Growth X Admin`)                    | Display name of the seeded admin.                                                    |
+| `BACHS_API_KEY`         | Yes (payment after login)                | Bachs secret key. `sk_sandbox_...` targets the sandbox API, `sk_live_...` the live API. |
 | `BACHS_BASE_URL`        | No (derived from the key prefix)         | Override the Bachs API base URL.                                                     |
 | `BACHS_PRODUCT_ID`      | One of this or amount + currency         | Bachs product to charge for the program fee. Wins over `BACHS_AMOUNT`.               |
 | `BACHS_AMOUNT`          | With `BACHS_CURRENCY`                    | Fixed program fee as a decimal string (e.g. `"150000"`) when no product id is set.   |
 | `BACHS_CURRENCY`        | With `BACHS_AMOUNT`                      | Currency code for `BACHS_AMOUNT` (e.g. `NGN`).                                       |
 | `BACHS_SUCCESS_URL`     | No (`<FRONTEND_URL>/success`)            | Where Bachs sends the payer after paying. Must be public: Bachs rejects `localhost`. |
 | `BACHS_CANCEL_URL`      | No (`<FRONTEND_URL>/cancel`)             | Where Bachs sends the payer if they cancel. Must be public too.                      |
+
+Submitting an application no longer creates a Bachs checkout: the program fee is taken after login (see
+`GET /applications/me/payment`), which is what the `BACHS_*` variables are for.
 
 Never commit real values for the secret variables; `.env` is gitignored and `.env.example` must stay blank for them.
 Generate a JWT secret with `openssl rand -hex 32`.
@@ -46,7 +54,9 @@ Base URL: `http://localhost:5000/api/v1` (global prefix set in `src/main.ts`; po
 
 Request bodies are validated by a global `ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true })`
 — a field not declared in a DTO causes `400 Bad Request` instead of being silently dropped. Routes marked **JWT** below
-need an `Authorization: Bearer <accessToken>` header (from `POST /auth/login`); the rest are public.
+need an `Authorization: Bearer <accessToken>` header (from `POST /auth/login`); routes marked **Admin** need the token from
+`POST /admin/auth/login` instead (an applicant token is rejected with `403`, an admin token on a **JWT** route with `401`);
+the rest are public.
 
 ### Endpoints
 
@@ -54,11 +64,17 @@ need an `Authorization: Bearer <accessToken>` header (from `POST /auth/login`); 
 | ------ | -------------------------------- | -------------------------------------------------------------------------- |
 | `GET`  | `/`                              | Scaffold health check — returns the plain string `Hello World!`            |
 | `POST` | `/applications`                  | Submit an onboarding application (`multipart/form-data`)                   |
-| `POST` | `/applications/payment-webhook`  | Bachs payment webhook; confirms payment and emails the GS code (JSON)      |
+| `POST` | `/applications/payment-webhook`  | Bachs payment webhook; marks the application paid (JSON)                   |
 | `POST` | `/applications/create-password`  | Set an account password using the emailed GS code (JSON)                   |
+| `GET`  | `/applications/me/payment`       | **JWT** — has the logged-in applicant paid the program fee?                |
+| `POST` | `/applications/me/payment/checkout` | **JWT** — start a Bachs checkout for the logged-in applicant            |
 | `POST` | `/auth/login`                    | Log in with email + password, returns a JWT (JSON)                         |
 | `POST` | `/auth/forgot-password`          | Email a single-use password-reset link (JSON)                              |
 | `POST` | `/auth/reset-password`           | Set a new password using the emailed reset token (JSON)                    |
+| `POST` | `/admin/auth/login`              | Admin login with the seeded email + password, returns an admin JWT (JSON)  |
+| `GET`  | `/admin/applications`            | **Admin** — applications (paginated) with all submitted details and invite state |
+| `POST` | `/admin/applications/:id/invite` | **Admin** — email the applicant their GS code (also resends)               |
+| `POST` | `/admin/applications/:id/reject` | **Admin** — email the applicant that they were rejected and mark it        |
 | `GET`  | `/discussions/:classId/comments` | **JWT** — list a class's discussion comments with their replies            |
 | `POST` | `/discussions/:classId/comments` | **JWT** — post a comment or a reply                                        |
 | `POST` | `/discussions/comments/:id/like` | **JWT** — like a comment (toggle; clears an existing dislike)              |
@@ -67,8 +83,8 @@ need an `Authorization: Bearer <accessToken>` header (from `POST /auth/login`); 
 | `POST` | `/quizzes/:quizId/submissions`   | **JWT** — submit answers; graded and the score is saved                    |
 | `GET`  | `/resources`                     | **JWT** — resource vault: curated articles and videos, by category or search |
 
-There is no endpoint yet to read applications back or change their status. Review currently happens
-by querying MongoDB directly (Atlas or `mongosh`).
+Applications are reviewed through the admin endpoints above (and the frontend's `/admin` pages). Invite sets an
+application's status to `accepted` and reject sets it to `rejected`; `reviewed` has no endpoint yet.
 
 ---
 
@@ -108,13 +124,12 @@ flat; the grouping in the response is only how the record is stored
 **Passport photo:** streamed straight to Cloudinary (folder `growth-x/passport-photos`); nothing is written to local
 disk. The record stores the returned `secure_url` as `submit.passportPhotoUrl`.
 
-**Payment, GS code and email:** there is no review step. After the record is saved, a Bachs checkout is created
-(`POST /v1/checkout-sessions`, with `metadata.application_id`) and a "complete your payment" email carrying the
-checkout link is sent to `applicationPortal.email`. The GS code (a random 12-character `gsCode`, stored on the record
-and never returned) is **not** sent yet. Once Bachs reports the payment (see `POST /applications/payment-webhook`),
-a second email goes out with the GS code and a link to `<FRONTEND_URL>/create-password?gsCode=<code>`. Emails are sent
-in the background: a mail failure is logged and does not fail the request. If the Bachs checkout can't be created, the
-saved application is deleted again and the request fails with `503`, so the applicant can resubmit.
+**Review, GS code and email:** there is no payment step at submission. After the record is saved, an "application
+received — we'll review your profile and email you the next steps" email goes to `applicationPortal.email`. A random
+12-character `gsCode` is generated and stored on the record (never returned) but **not** emailed: an admin reviews the
+application and sends the invite (`POST /admin/applications/:id/invite`), which emails the code and a link to
+`<FRONTEND_URL>/create-password?gsCode=<code>`. Emails are sent in the background: a mail failure is logged and does not
+fail the request.
 
 **Response `201`:**
 
@@ -158,12 +173,11 @@ saved application is deleted again and the request fails with `503`, so the appl
     },
     "status": "pending",
     "createdAt": "..."
-  },
-  "paymentUrl": "https://checkout.bachs.io/..."
+  }
 }
 ```
 
-`paymentUrl` is the Bachs hosted checkout for this application (also emailed). `accessibilitySupport.accessibilityNeed` and `accessibilityNotes` are only present when `hasAccessibilityNeeds` is
+`accessibilitySupport.accessibilityNeed` and `accessibilityNotes` are only present when `hasAccessibilityNeeds` is
 `"yes"` (and the notes were filled in).
 `status` is one of `pending` (default), `reviewed`, `accepted`, `rejected`.
 
@@ -174,7 +188,6 @@ saved application is deleted again and the request fails with `503`, so the appl
 | `400`  | Any field fails validation, or an unknown field is sent |
 | `413`  | `passportPhoto` is over 10 MB                           |
 | `415`  | `passportPhoto` is not JPEG/PNG                         |
-| `503`  | The Bachs checkout could not be created; nothing saved  |
 
 ### POST /applications/payment-webhook
 
@@ -182,7 +195,8 @@ Public, called by Bachs. Configure this URL (`<backend>/api/v1/applications/paym
 the Bachs dashboard for the `collection.succeeded` / `checkout.completed` events. The body is Bachs' event envelope
 (`{ id, type, created_at, organization_id, data }`); only the checkout id in `data` is read. The body itself is never
 trusted: the backend fetches the checkout session from Bachs (`GET /v1/checkout-sessions/{id}`) with the API key and
-only marks the application paid (`paidAt`) when Bachs says the payment succeeded, then emails the GS code. Repeat
+only marks the application paid (`paidAt`) when Bachs says the payment succeeded (and emails the GS code only if the
+account has no password yet). Repeat
 deliveries are ignored once paid. Unknown checkout ids are ignored. Always answers `200 { "received": true }`; if
 Bachs can't be reached the request fails so Bachs retries.
 
@@ -196,7 +210,7 @@ sets a password, authenticated only by the GS code.
 
 | Field      | Type   | Required | Notes                                                                                 |
 | ---------- | ------ | -------- | ------------------------------------------------------------------------------------- |
-| `gsCode`   | string | Yes      | The code emailed after `POST /applications`                                           |
+| `gsCode`   | string | Yes      | The code emailed by the admin invite (`POST /admin/applications/:id/invite`)          |
 | `password` | string | Yes      | min 8 chars, with at least one number, one uppercase letter and one special character |
 
 ```json
@@ -204,9 +218,10 @@ sets a password, authenticated only by the GS code.
 ```
 
 The password is hashed with bcrypt and stored on the application as `passwordHash` (never returned). A GS code can be
-used once: after a password is set, the same code is rejected. The code is only emailed after payment, and the endpoint
-also refuses applications created since payment was introduced that haven't paid. Applications from before that (no
-payment record) are not gated. It does not check the application's `status`.
+used once: after a password is set, the same code is rejected. The code is only emailed by the admin invite, so it
+is the proof the applicant was approved; the endpoint does not check `invitedAt`, but it refuses (`403`) an application
+that has since been rejected. Applications created while
+payment was required (`paymentRequired`) must still have paid.
 
 **Response `200`:**
 
@@ -225,6 +240,148 @@ payment record) are not gated. It does not check the application's `status`.
 | `400`  | `gsCode` doesn't match any application, or a field fails validation |
 | `403`  | The application requires payment and hasn't paid yet                |
 | `409`  | The GS code has already been used to set a password                 |
+
+### GET /applications/me/payment
+
+**JWT.** Backs the dashboard's non-dismissable payment modal: the frontend asks this right after login (and keeps
+asking every 10 s while the modal is up) and shows the modal while `hasPaid` is `false`. Unpaid means the
+application has no `paidAt`. If the account has a Bachs checkout in flight, the backend re-fetches it from Bachs
+first and records the payment when Bachs says it succeeded, so the modal clears even if the webhook is late or
+can't reach the backend (local dev). If Bachs can't be reached it simply answers `hasPaid: false`.
+
+**Response `200`:**
+
+```json
+{ "status": "Success", "statusCode": 200, "data": { "hasPaid": false } }
+```
+
+### POST /applications/me/payment/checkout
+
+**JWT.** No body. Creates a Bachs checkout (`POST /v1/checkout-sessions`, priced by `BACHS_PRODUCT_ID` or
+`BACHS_AMOUNT` + `BACHS_CURRENCY`) for the caller's application, stores its id as `bachsCheckoutId` (replacing any
+earlier one; that's the id the webhook matches), and returns the hosted URL for the frontend to redirect to. Bachs
+sends the payer back to `<FRONTEND_URL>/success` or `/cancel`, both of which link back to the dashboard.
+
+**Response `200`:**
+
+```json
+{ "status": "Success", "statusCode": 200, "paymentUrl": "https://checkout.bachs.io/..." }
+```
+
+**Errors:**
+
+| Status | When                                                                      |
+| ------ | ------------------------------------------------------------------------- |
+| `401`  | Missing, invalid or expired token                                         |
+| `404`  | The token's application no longer exists                                  |
+| `409`  | Payment has already been made (also checked against Bachs for old checkouts) |
+| `503`  | The Bachs checkout could not be created                                   |
+
+Once payment is confirmed (by the webhook or by `GET /applications/me/payment`), the GS code email is only sent to
+accounts that haven't created a password yet; someone paying after login gets no email.
+
+---
+
+## Admin
+
+Staff accounts live in their own `admins` collection (`AdminEntity`: `name`, `email`, bcrypt `passwordHash`), apart from
+applications. An admin token carries `role: "admin"`; `AdminGuard` rejects anything without it, and `JwtAuthGuard`
+rejects anything with it, so neither kind of token works on the other's routes.
+
+### Seeded admin account
+
+On every boot `AdminSeederService` creates the admin if no admin with that email exists. If one already exists it is
+left alone, with one exception: when `ADMIN_PASSWORD` is set in the environment, the stored password is updated to match
+it, so editing `.env` and restarting is how you change the password. The built-in dev defaults never overwrite an
+existing admin.
+
+| Environment      | Email                | Password             |
+| ---------------- | -------------------- | -------------------- |
+| not `production` | `admin@growthx.com`  | `GrowthX@Admin2026`  |
+| `production`     | `ADMIN_EMAIL`        | `ADMIN_PASSWORD`     |
+
+The dev credentials are for local use only. In production nothing is seeded unless both variables are set (a warning is
+logged instead), so set strong values, and change the dev password if your dev database is reachable by others. Log in at
+the frontend's `/admin/login`.
+
+### POST /admin/auth/login
+
+Public. JSON body `{ "email": "...", "password": "..." }`. The email is matched case-insensitively.
+
+**Response `200`:**
+
+```json
+{
+  "status": "Success",
+  "statusCode": 200,
+  "data": {
+    "accessToken": "<jwt, 8 h>",
+    "admin": { "id": "...", "name": "Growth X Admin", "email": "admin@growthx.com" }
+  }
+}
+```
+
+`401` for a wrong email or password (same message for both).
+
+### GET /admin/applications
+
+**Admin.** Applications, newest first, one page at a time. Optional query params: `page` (default `1`) and `limit`
+(default `10`, max `100`). `data` is a list of:
+
+```json
+{
+  "id": "...",
+  "applicationPortal": { "fullName": "...", "email": "...", "program": "...", "cohort": "..." },
+  "personalInfo": { "title": "...", "surname": "...", "firstName": "...", "businessName": "...", "dateOfBirth": "...", "gender": "..." },
+  "businessBasics": { "businessDescription": "...", "operatingDuration": "...", "averageRevenue": "...", "fullTimeCommitment": "..." },
+  "whoYouAre": { "challengeAndSkillGap": "...", "cohortMotivation": "..." },
+  "accessibilitySupport": { "hasAccessibilityNeeds": "no" },
+  "submit": { "passportPhotoUrl": "..." },
+  "status": "pending",
+  "createdAt": "...",
+  "invitedAt": null,
+  "hasAccount": false
+}
+```
+
+`invitedAt` is when the last invite email went out (`null` if never); `hasAccount` is true once the applicant has set
+a password. The GS code and password hash are never included.
+
+The response also carries `meta`: `{ "total": 23, "page": 1, "limit": 10, "totalPages": 3 }`. A `page` past the last one
+returns an empty `data` list; `page`/`limit` that aren't positive integers (or a `limit` over 100) fail with `400`.
+
+### POST /admin/applications/:id/invite
+
+**Admin.** Emails the applicant their GS code and a `/create-password` link, then sets `invitedAt` and `status` to
+`accepted`. Calling it again resends the email. Unlike the other emails this one is awaited: if it can't be sent
+nothing is marked and the request fails.
+
+**Response `200`:** `{ "status": "Success", "statusCode": 200, "message": "Invite sent", "data": <same shape as a list item> }`
+
+| Status | When                                                   |
+| ------ | ------------------------------------------------------ |
+| `401`  | Missing, invalid or expired token                      |
+| `403`  | The token is not an admin token                        |
+| `404`  | No application with that id                            |
+| `409`  | The applicant has already created their account        |
+| `503`  | The invite email could not be sent                     |
+
+### POST /admin/applications/:id/reject
+
+**Admin.** No body. Emails the applicant that they weren't accepted this time (and may apply to a later cohort), then
+sets `status` to `rejected`. The email is awaited: if it can't be sent nothing is changed and the request fails, so the
+admin can retry. A rejected applicant's earlier GS code stops working (`POST /applications/create-password` answers
+`403`). Inviting them afterwards is still possible and sets the status back to `accepted`.
+
+**Response `200`:** `{ "status": "Success", "statusCode": 200, "message": "Applicant rejected", "data": <same shape as a list item> }`
+
+| Status | When                                                   |
+| ------ | ------------------------------------------------------ |
+| `401`  | Missing, invalid or expired token                      |
+| `403`  | The token is not an admin token                        |
+| `404`  | No application with that id                            |
+| `409`  | The applicant already has an account, or is already rejected |
+| `503`  | The rejection email could not be sent                  |
 
 ---
 
