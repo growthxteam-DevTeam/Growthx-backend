@@ -75,6 +75,14 @@ the rest are public.
 | `GET`  | `/admin/applications`            | **Admin** — applications (paginated) with all submitted details and invite state |
 | `POST` | `/admin/applications/:id/invite` | **Admin** — email the applicant their GS code (also resends)               |
 | `POST` | `/admin/applications/:id/reject` | **Admin** — email the applicant that they were rejected and mark it        |
+| `GET`  | `/dashboard`                     | **JWT** — the caller's dashboard: banner, announcements, events, to-dos    |
+| `GET`  | `/admin/dashboard/items`         | **Admin** — announcements / events / assignments (`?type=`)                |
+| `POST` | `/admin/dashboard/items`         | **Admin** — add one                                                        |
+| `PATCH`| `/admin/dashboard/items/:id`     | **Admin** — edit one                                                       |
+| `DELETE`| `/admin/dashboard/items/:id`    | **Admin** — delete one                                                     |
+| `GET`  | `/admin/dashboard/banners`       | **Admin** — program banners                                                |
+| `PUT`  | `/admin/dashboard/banners`       | **Admin** — create or replace the banner for a program + cohort            |
+| `DELETE`| `/admin/dashboard/banners/:id`  | **Admin** — delete a banner                                                |
 | `GET`  | `/discussions/:classId/comments` | **JWT** — list a class's discussion comments with their replies            |
 | `POST` | `/discussions/:classId/comments` | **JWT** — post a comment or a reply                                        |
 | `POST` | `/discussions/comments/:id/like` | **JWT** — like a comment (toggle; clears an existing dislike)              |
@@ -83,7 +91,7 @@ the rest are public.
 | `POST` | `/quizzes/:quizId/submissions`   | **JWT** — submit answers; graded and the score is saved                    |
 | `GET`  | `/resources`                     | **JWT** — resource vault: curated articles and videos, by category or search |
 
-Applications are reviewed through the admin endpoints above (and the frontend's `/admin` pages). Invite sets an
+Applications are reviewed through the admin endpoints above (and the `growth-x-admin` portal's `/admin/applications` page). Invite sets an
 application's status to `accepted` and reject sets it to `rejected`; `reviewed` has no endpoint yet.
 
 ---
@@ -302,7 +310,7 @@ existing admin.
 
 The dev credentials are for local use only. In production nothing is seeded unless both variables are set (a warning is
 logged instead), so set strong values, and change the dev password if your dev database is reachable by others. Log in at
-the frontend's `/admin/login`.
+the admin portal's `/admin/login` (`growth-x-admin`, `http://localhost:3001` in dev).
 
 ### POST /admin/auth/login
 
@@ -382,6 +390,88 @@ admin can retry. A rejected applicant's earlier GS code stops working (`POST /ap
 | `404`  | No application with that id                            |
 | `409`  | The applicant already has an account, or is already rejected |
 | `503`  | The rejection email could not be sent                  |
+
+---
+
+## Dashboard
+
+What learners see on `/dashboard` is managed from the admin portal and stored in two collections: `dashboard_banners`
+(one program banner per program + cohort) and `dashboard_items` (announcements, calendar events and to-do assignments,
+told apart by `type`). An item can be addressed to one program, one cohort, both, or everyone (`program` / `cohort`
+`null`). The allowed values are the onboarding form's: programs `zero-to-launch`, `build-for-funding`,
+`scale-your-sales`, `price-for-profit`, `lead-your-team`; cohorts `cohort-1` to `cohort-4`
+(`src/dashboard/dashboard.constants.ts`, mirrored in the frontends). Applications created with an older form version
+hold other program values (e.g. `product-design`); those learners only match content addressed to everyone.
+
+### GET /dashboard
+
+**JWT.** Everything that applies to the caller, matched on their application's `program` and `cohort`.
+
+```json
+{
+  "status": "Success",
+  "statusCode": 200,
+  "data": {
+    "program": "zero-to-launch",
+    "cohort": "cohort-1",
+    "banner": { "title": "Zero to Launch", "durationWeeks": 6, "leader": "Sarah A.B", "cohortMembers": 32 },
+    "announcements": [{ "id": "...", "text": "...", "createdAt": "..." }],
+    "events": [{ "id": "...", "text": "Live session", "date": "2026-12-09T14:00:00.000Z" }],
+    "assignments": [{ "id": "...", "text": "Turn in Quiz 2", "date": "2026-12-15T10:59:00.000Z", "points": 20 }]
+  }
+}
+```
+
+`banner` is `null` until one is saved for that exact program + cohort (a learner with no cohort never gets one).
+`announcements` are newest first, at most 5. `events` are soonest first and start from yesterday (so today's survive
+timezone differences). `assignments` are soonest due first, only those not yet due, at most 4; there is no submission
+tracking, so nothing is ever marked done. `404` if the caller's application no longer exists.
+
+### GET /admin/dashboard/items?type=
+
+**Admin.** `type` is required: `announcement`, `event` or `assignment`. Announcements come newest first, the others by
+date. Each item in `data`: `{ id, type, program, cohort, text, date, points, createdAt }` (`date` is the event date or
+the assignment's due date, `null` for announcements; `points` is only set on assignments).
+
+### POST /admin/dashboard/items
+
+**Admin.** JSON body.
+
+| Field     | Type            | Required                | Notes                                                      |
+| --------- | --------------- | ----------------------- | ---------------------------------------------------------- |
+| `type`    | string          | Yes                     | `announcement`, `event` or `assignment`; fixed afterwards  |
+| `text`    | string          | Yes                     | Max 500 chars. The message, event title or assignment title |
+| `program` | string \| null  | No                      | Omit or `null` for every program                           |
+| `cohort`  | string \| null  | No                      | Omit or `null` for every cohort                            |
+| `date`    | ISO date string | `event` and `assignment` | Event date / due date. Ignored for announcements           |
+| `points`  | integer         | `assignment`            | 0 to 1000. Ignored for other types                         |
+
+**Response `201`:** `{ "status": "Success", "statusCode": 201, "data": <item> }`. `400` on validation errors.
+
+### PATCH /admin/dashboard/items/:id
+
+**Admin.** Any of `text`, `program`, `cohort`, `date`, `points` (the type can't change). `null` for `program` / `cohort`
+means everyone; `date` / `points` are ignored on types that don't use them. **Response `200`:** the updated `data`.
+`404` for an unknown id.
+
+### DELETE /admin/dashboard/items/:id
+
+**Admin.** `200 { "message": "Item deleted" }`, `404` for an unknown id.
+
+### GET /admin/dashboard/banners
+
+**Admin.** All banners, ordered by program then cohort: `{ id, program, cohort, title, durationWeeks, leader, cohortMembers }`.
+
+### PUT /admin/dashboard/banners
+
+**Admin.** Creates the banner for `program` + `cohort`, or replaces the one that exists (that pair is unique). Body:
+`program`, `cohort` (both required, from the lists above), `title` (max 100), `durationWeeks` (1 to 104), `leader`
+(max 100), `cohortMembers` (0 to 100000). **Response `200`:** the saved banner as `data`.
+
+### DELETE /admin/dashboard/banners/:id
+
+**Admin.** `200 { "message": "Banner deleted" }`, `404` for an unknown id. Learners of that program + cohort go back to
+seeing just their program name.
 
 ---
 

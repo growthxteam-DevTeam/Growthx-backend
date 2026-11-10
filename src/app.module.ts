@@ -6,6 +6,7 @@ import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { ApplicationsModule } from './applications/applications.module';
 import { AuthModule } from './auth/auth.module';
+import { DashboardModule } from './dashboard/dashboard.module';
 import { DiscussionsModule } from './discussions/discussions.module';
 import { QuizzesModule } from './quizzes/quizzes.module';
 import { ResourcesModule } from './resources/resources.module';
@@ -27,6 +28,7 @@ import { ResourcesModule } from './resources/resources.module';
     AdminModule,
     ApplicationsModule,
     AuthModule,
+    DashboardModule,
     DiscussionsModule,
     QuizzesModule,
     ResourcesModule,

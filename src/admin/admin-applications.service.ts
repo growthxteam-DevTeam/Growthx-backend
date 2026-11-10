@@ -27,7 +27,8 @@ const toAdminView = (application: ApplicationEntity) => ({
   businessBasics: application.businessBasics,
   whoYouAre: application.whoYouAre,
   accessibilitySupport: application.accessibilitySupport,
-  submit: application.submit,
+  // Missing on records saved without a passport photo, so always send an object.
+  submit: application.submit ?? {},
   status: application.status,
   createdAt: application.createdAt,
   invitedAt: application.invitedAt ?? null,

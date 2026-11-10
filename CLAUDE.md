@@ -29,7 +29,7 @@ route prefix is `api/v1`, CORS is enabled globally ([src/main.ts](src/main.ts)).
 Standard Nest layout per domain: `*.module.ts` / `*.controller.ts` / `*.service.ts` / `dto/` / `entities/`.
 
 `AppModule` ([src/app.module.ts](src/app.module.ts)) imports `AdminModule`, `ApplicationsModule`, `AuthModule`,
-`DiscussionsModule`, `QuizzesModule` and `ResourcesModule`. An applicant's account _is_ their application record: the
+`DashboardModule`, `DiscussionsModule`, `QuizzesModule` and `ResourcesModule`. An applicant's account _is_ their application record: the
 one-time `gsCode`, emailed only when an admin sends the invite (`POST /admin/applications/:id/invite`), is exchanged via `POST /applications/create-password` for a bcrypt `passwordHash`, then `POST /auth/login`
 (`src/auth/`) verifies email + password and returns a JWT signed with `JWT_SECRET`. `POST /auth/forgot-password` emails a
 single-use reset link (only the SHA-256 of the token is stored, 1 h expiry, same 200 whether or not the email exists) and
@@ -38,8 +38,8 @@ single-use reset link (only the SHA-256 of the token is stored, 1 h expiry, same
 
 Protected routes opt in per controller/route with `@UseGuards(JwtAuthGuard)` (`src/auth/jwt-auth.guard.ts`, which
 verifies the bearer token and sets `request.user = { id, email }`) and read the caller with `@CurrentUser()`.
-`id` is the applicant's application `_id`. Nothing is guarded globally. The only role is admin (below); the frontend's
-banner RTK endpoints still have no backend counterpart.
+`id` is the applicant's application `_id`. Nothing is guarded globally. The only role is admin (below); the `growth-x-admin` portal
+is the only client of the `/admin/*` routes.
 
 ### Admin module
 
@@ -50,6 +50,18 @@ banner RTK endpoints still have no backend counterpart.
 told apart by the `role: "admin"` claim: `AdminGuard` requires it and `JwtAuthGuard` rejects it. List/invite responses are
 built field by field (`toAdminView`) so `gsCode` and `passwordHash` never leave the server. The invite and rejection emails are
 awaited (unlike the fire-and-forget ones) so the admin sees a failure; a rejected application can no longer create-password. Seed credentials are documented in README.md.
+
+### Dashboard module
+
+`src/dashboard/` is the learner dashboard's content. Admin side (`AdminDashboardController`, `AdminGuard`, under
+`/admin/dashboard/*`): CRUD for `DashboardItemEntity` (`dashboard_items`: announcements, events and assignments in one
+collection, told apart by `type`; `date` is the event/due date, `points` is assignments only) and an upsert-by-
+(program, cohort) for `DashboardBannerEntity` (`dashboard_banners`). Learner side: `GET /dashboard` (JWT) resolves
+everything for the caller's application. Audience is `program` / `cohort`, where `null` means everyone and must be
+stored as an explicit `null` (TypeORM skips `undefined`), because the learner query is `$in: [null, <theirs>]`
+(through the `mongoWhere()` cast). Program/cohort values are validated against `dashboard.constants.ts`, which mirrors
+the onboarding form; older applications hold other program values and only see "everyone" content. Add a program
+or cohort in the frontend's onboarding constants, the admin's `_constants`, and here.
 
 ### Discussions module
 
