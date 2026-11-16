@@ -95,7 +95,8 @@ validated to be `http(s)` before they reach the client. No Mongo, no env vars.
 
 Three routes (see [README.md](README.md) for payloads and response shapes): `POST /applications` accepts the frontend
 onboarding wizard as `multipart/form-data`, saves it and emails "we'll review your profile" (no payment, no GS code
-yet); `POST /applications/create-password` (JSON) sets the password from the GS code the admin invite emailed and 403s
+yet), refusing with 409 while the same email (case-insensitive) has an application that isn't `rejected`
+(`assertNoOpenApplication`, the message differs for `accepted`); `POST /applications/create-password` (JSON) sets the password from the GS code the admin invite emailed and 403s
 unpaid applications that have `paymentRequired` (legacy records only). Payment happens **after login**: the dashboard
 shows a blocking payment modal until `GET /applications/me/payment` (JWT) reports `hasPaid` (`paidAt` set), and
 `POST /applications/me/payment/checkout` (JWT) creates the Bachs checkout and returns its `paymentUrl`. The status route

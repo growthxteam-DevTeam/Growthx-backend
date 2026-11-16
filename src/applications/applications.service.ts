@@ -10,17 +10,22 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import * as bcrypt from 'bcrypt';
 import { ObjectId } from 'mongodb';
-import { Repository } from 'typeorm';
+import { FindOptionsWhere, Repository } from 'typeorm';
 
 import { BachsService } from 'src/utility/bachs/bachs.service';
 import { CloudinaryService } from 'src/utility/cloudinary/cloudinary.service';
 import { ApplicationStatus } from 'src/utility/common/application-status.enum';
+import { escapeRegExp } from 'src/utility/common/escape-reg-exp';
 import { generateGsCode } from 'src/utility/common/generate-gs-code';
 import { MailService } from 'src/utility/mail/mail.service';
 
 import { CreateApplicationDto } from './dto/create-application.dto';
 import { CreatePasswordDto } from './dto/create-password.dto';
 import { ApplicationEntity } from './entities/application.entity';
+
+// `$regex` and `$ne` don't type-check in TypeORM where clauses (same workaround as the discussions service).
+const mongoWhere = (where: object) =>
+  where as unknown as FindOptionsWhere<ApplicationEntity>;
 
 const PASSWORD_SALT_ROUNDS = 10;
 
@@ -59,6 +64,8 @@ export class ApplicationsService {
     statusCode: number;
     data: ApplicationEntity;
   }> {
+    await this.assertNoOpenApplication(dto.email);
+
     const passportPhotoUrl = passportPhoto
       ? (
           await this.cloudinaryService.uploadImage(
@@ -129,6 +136,30 @@ export class ApplicationsService {
       );
 
     return { status: 'Success', statusCode: 201, data };
+  }
+
+  // One application per email at a time: a new one is only accepted once every earlier one has been
+  // rejected. Checked before the photo upload so a refused submission costs nothing. Emails are stored
+  // as typed, so match case-insensitively (same as login).
+  private async assertNoOpenApplication(email: string): Promise<void> {
+    const open = await this.applicationsRepository.find({
+      where: mongoWhere({
+        'applicationPortal.email': {
+          $regex: `^${escapeRegExp(email.trim())}$`,
+          $options: 'i',
+        },
+        status: { $ne: ApplicationStatus.REJECTED },
+      }),
+    });
+    if (open.length === 0) return;
+
+    throw new ConflictException(
+      open.some(
+        (application) => application.status === ApplicationStatus.ACCEPTED,
+      )
+        ? 'Your application has already been accepted. Check your email for your invitation, or log in if you have already created your account.'
+        : 'You have already submitted an application with this email. We are reviewing it and will email you the next steps.',
+    );
   }
 
   // Bachs calls this when a checkout changes. The body only tells us which checkout to look at:

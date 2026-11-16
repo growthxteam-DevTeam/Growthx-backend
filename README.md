@@ -132,6 +132,13 @@ flat; the grouping in the response is only how the record is stored
 **Passport photo:** streamed straight to Cloudinary (folder `growth-x/passport-photos`); nothing is written to local
 disk. The record stores the returned `secure_url` as `submit.passportPhotoUrl`.
 
+**One open application per email:** an email can't apply again while an earlier application with it is still open
+(`pending`, `reviewed` or `accepted`); only once every earlier one has been `rejected` is a new submission accepted.
+The email is matched case-insensitively and ignoring surrounding spaces, and the check runs before the passport photo is
+uploaded. The `409` message says why: for an `accepted` application it tells them to check their email for the invitation
+(or log in if they already created their account), otherwise that the application is still being reviewed. Note that this
+reveals whether an email has an application, to anyone who submits that email.
+
 **Review, GS code and email:** there is no payment step at submission. After the record is saved, an "application
 received — we'll review your profile and email you the next steps" email goes to `applicationPortal.email`. A random
 12-character `gsCode` is generated and stored on the record (never returned) but **not** emailed: an admin reviews the
@@ -195,6 +202,7 @@ fail the request.
 | ------ | ------------------------------------------------------- |
 | `400`  | Any field fails validation, or an unknown field is sent |
 | `413`  | `passportPhoto` is over 10 MB                           |
+| `409`  | This email already has an open application (see above)  |
 | `415`  | `passportPhoto` is not JPEG/PNG                         |
 
 ### POST /applications/payment-webhook
