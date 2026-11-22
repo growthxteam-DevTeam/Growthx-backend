@@ -141,8 +141,8 @@ enums such as `application-status.enum.ts`, `generate-gs-code.ts`). Put cross-mo
 ## Environment
 
 Loaded via `@nestjs/config` (`isGlobal: true`) from `.env`. Required: `MONGODB_URI`, `CLOUDINARY_CLOUD_NAME`,
-`CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET`, `SMTP_HOST`, `SMTP_USER`, `SMTP_PASS`, `JWT_SECRET` (the app won't
+`CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `JWT_SECRET` (the app won't
 boot without it). Optional: `PORT`,
-`SMTP_PORT` (587), `MAIL_FROM`, `FRONTEND_URL` (`http://localhost:3000`). `ADMIN_EMAIL` / `ADMIN_PASSWORD` / `ADMIN_NAME`
+`AWS_REGION` (defaults to `eu-north-1`), `MAIL_FROM` (the sender address — must be a verified SES identity). `ADMIN_EMAIL` / `ADMIN_PASSWORD` / `ADMIN_NAME`
 seed the admin (required in production, defaulted otherwise). Payments (taken after login) need `BACHS_API_KEY` plus either
 `BACHS_PRODUCT_ID` or `BACHS_AMOUNT` + `BACHS_CURRENCY`.

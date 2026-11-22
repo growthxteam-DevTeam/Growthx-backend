@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { SESClient, SendEmailCommand } from '@aws-sdk/client-ses';
 import { createTransport, type Transporter } from 'nodemailer';
 
 interface ApplicationReceivedMail {
@@ -44,16 +45,17 @@ export class MailService {
   private readonly transporter: Transporter;
 
   constructor(private readonly config: ConfigService) {
-    const port = Number(this.config.get<string>('SMTP_PORT') ?? 587);
+    const sesClient = new SESClient({
+      region: this.config.get<string>('AWS_REGION') ?? 'eu-north-1',
+      credentials: {
+        accessKeyId: this.config.get<string>('AWS_ACCESS_KEY_ID') ?? '',
+        secretAccessKey:
+          this.config.get<string>('AWS_SECRET_ACCESS_KEY') ?? '',
+      },
+    });
 
     this.transporter = createTransport({
-      host: this.config.get<string>('SMTP_HOST'),
-      port,
-      secure: port === 465,
-      auth: {
-        user: this.config.get<string>('SMTP_USER'),
-        pass: this.config.get<string>('SMTP_PASS'),
-      },
+      SES: { sesClient, SendEmailCommand },
     });
   }
 
@@ -239,61 +241,15 @@ export class MailService {
       this.config.get<string>('MAIL_FROM') ??
       this.config.get<string>('SMTP_USER');
 
-    const resendApiKey = this.config.get<string>('RESEND_API_KEY');
-    const provider = resendApiKey ? 'Resend' : 'SMTP';
-
     try {
-      if (resendApiKey) {
-        await this.sendViaResend(resendApiKey, {
-          from,
-          to,
-          subject,
-          text,
-          html,
-        });
-      } else {
-        await this.transporter.sendMail({ from, to, subject, text, html });
-      }
-      this.logger.log(`Email sent to ${to} via ${provider}`);
+      await this.transporter.sendMail({ from, to, subject, text, html });
+      this.logger.log(`Email sent to ${to} via AWS SES`);
     } catch (error) {
       this.logger.error(
-        `Failed to send email to ${to} via ${provider}: ${error instanceof Error ? error.message : String(error)}`,
+        `Failed to send email to ${to} via AWS SES: ${error instanceof Error ? error.message : String(error)}`,
         error instanceof Error ? error.stack : undefined,
       );
       throw error;
-    }
-  }
-
-  // Render's free tier blocks outbound SMTP ports, so prod must use HTTPS.
-  private async sendViaResend(
-    apiKey: string,
-    mail: {
-      from?: string;
-      to: string;
-      subject: string;
-      text: string;
-      html: string;
-    },
-  ) {
-    const response = await fetch('https://api.resend.com/emails', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        'content-type': 'application/json',
-      },
-      body: JSON.stringify({
-        from: mail.from,
-        to: [mail.to],
-        subject: mail.subject,
-        text: mail.text,
-        html: mail.html,
-      }),
-    });
-
-    if (!response.ok) {
-      throw new Error(
-        `Resend request failed (${response.status}): ${await response.text()}`,
-      );
     }
   }
 }
