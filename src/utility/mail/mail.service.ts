@@ -1,7 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { SESClient, SendEmailCommand } from '@aws-sdk/client-ses';
-import { createTransport, type Transporter } from 'nodemailer';
 
 interface ApplicationReceivedMail {
   to: string;
@@ -42,10 +41,11 @@ const escapeHtml = (value: string) =>
 @Injectable()
 export class MailService {
   private readonly logger = new Logger(MailService.name);
-  private readonly transporter: Transporter;
+  private readonly ses: SESClient;
+  private readonly from: string;
 
   constructor(private readonly config: ConfigService) {
-    const sesClient = new SESClient({
+    this.ses = new SESClient({
       region: this.config.get<string>('AWS_REGION') ?? 'eu-north-1',
       credentials: {
         accessKeyId: this.config.get<string>('AWS_ACCESS_KEY_ID') ?? '',
@@ -54,9 +54,7 @@ export class MailService {
       },
     });
 
-    this.transporter = createTransport({
-      SES: { sesClient, SendEmailCommand },
-    });
+    this.from = this.config.get<string>('MAIL_FROM') ?? '';
   }
 
   // Sent right after submission: tells the applicant to expect the next steps by email.
@@ -237,12 +235,20 @@ export class MailService {
     text: string;
     html: string;
   }) {
-    const from =
-      this.config.get<string>('MAIL_FROM') ??
-      this.config.get<string>('SMTP_USER');
-
     try {
-      await this.transporter.sendMail({ from, to, subject, text, html });
+      await this.ses.send(
+        new SendEmailCommand({
+          Source: this.from,
+          Destination: { ToAddresses: [to] },
+          Message: {
+            Subject: { Data: subject, Charset: 'UTF-8' },
+            Body: {
+              Text: { Data: text, Charset: 'UTF-8' },
+              Html: { Data: html, Charset: 'UTF-8' },
+            },
+          },
+        }),
+      );
       this.logger.log(`Email sent to ${to} via AWS SES`);
     } catch (error) {
       this.logger.error(
